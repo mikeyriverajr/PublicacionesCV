@@ -1,0 +1,6 @@
+{
+  "name": "Publicaciones Congregación",
+  "description": "Sistema gratuito de gestión de pedidos especiales, publicaciones destacadas y existencias en el mostrador para la congregación.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
