@@ -40,11 +40,22 @@ import {
 import { PublisherPortal, PublisherTab } from './components/PublisherPortal';
 import { ServantPanel, ServantTab } from './components/ServantPanel';
 
+const LOCAL_STORAGE_DB_KEY = 'congregation_publications_db_v2';
 const LOCAL_STORAGE_PUBLISHER_ID_KEY = 'congregation_selected_publisher_id';
 const LOCAL_STORAGE_SERVANT_AUTH_KEY = 'congregation_servant_authenticated';
 
 export default function App() {
-  const [db, setDb] = useState<AppDatabase>(INITIAL_DATABASE);
+  const [db, setDb] = useState<AppDatabase>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_DB_KEY);
+      if (saved) {
+        return JSON.parse(saved) as AppDatabase;
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return INITIAL_DATABASE;
+  });
 
   const [mode, setMode] = useState<'publisher' | 'servant'>('publisher');
   const [publisherTab, setPublisherTab] = useState<PublisherTab>('catalog');
@@ -71,87 +82,112 @@ export default function App() {
     setToastMessage(msg);
   };
 
+  const updateLocalDb = (updater: (prev: AppDatabase) => AppDatabase) => {
+    setDb((prev) => {
+      const next = updater(prev);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_DB_KEY, JSON.stringify(next));
+      } catch {
+        // Ignore storage quota errors
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!toastMessage) return;
     const timer = setTimeout(() => setToastMessage(null), 3200);
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // Seed Firestore if empty and subscribe to real-time updates
+  // Seed Firestore once if uninitialized, then attach live listeners
   useEffect(() => {
-    ensureFirestoreSeeded().catch((err) => {
-      console.error('Seed check error:', err);
-    });
+    let unsubSettings: (() => void) | undefined;
+    let unsubPubs: (() => void) | undefined;
+    let unsubPublishers: (() => void) | undefined;
+    let unsubOrders: (() => void) | undefined;
+    let active = true;
 
-    const unsubSettings = onSnapshot(
-      doc(firestoreDb, 'settings', 'main'),
-      (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          setDb((prev) => ({
-            ...prev,
-            congregationName:
-              typeof data.congregationName === 'string'
-                ? data.congregationName
-                : prev.congregationName,
-            adminPin:
-              typeof data.adminPin === 'string' ? data.adminPin : prev.adminPin,
-          }));
-        }
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.GET, 'settings/main');
+    async function initRealtimeSync() {
+      try {
+        await ensureFirestoreSeeded();
+      } catch (err) {
+        console.error('Seed check error:', err);
       }
-    );
 
-    const unsubPubs = onSnapshot(
-      collection(firestoreDb, 'publications'),
-      (snap) => {
-        if (!snap.empty) {
+      if (!active) return;
+
+      unsubSettings = onSnapshot(
+        doc(firestoreDb, 'settings', 'main'),
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            updateLocalDb((prev) => ({
+              ...prev,
+              congregationName:
+                typeof data.congregationName === 'string'
+                  ? data.congregationName
+                  : prev.congregationName,
+              adminPin:
+                typeof data.adminPin === 'string'
+                  ? data.adminPin
+                  : prev.adminPin,
+            }));
+          }
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.GET, 'settings/main');
+        }
+      );
+
+      unsubPubs = onSnapshot(
+        collection(firestoreDb, 'publications'),
+        (snap) => {
           const pubs: Publication[] = [];
           snap.forEach((d) => pubs.push(d.data() as Publication));
           pubs.sort((a, b) => a.title.localeCompare(b.title, 'es'));
-          setDb((prev) => ({ ...prev, publications: pubs }));
+          updateLocalDb((prev) => ({ ...prev, publications: pubs }));
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.LIST, 'publications');
         }
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'publications');
-      }
-    );
+      );
 
-    const unsubPublishers = onSnapshot(
-      collection(firestoreDb, 'publishers'),
-      (snap) => {
-        if (!snap.empty) {
+      unsubPublishers = onSnapshot(
+        collection(firestoreDb, 'publishers'),
+        (snap) => {
           const list: Publisher[] = [];
           snap.forEach((d) => list.push(d.data() as Publisher));
           list.sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
-          setDb((prev) => ({ ...prev, publishers: list }));
+          updateLocalDb((prev) => ({ ...prev, publishers: list }));
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.LIST, 'publishers');
         }
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'publishers');
-      }
-    );
+      );
 
-    const unsubOrders = onSnapshot(
-      collection(firestoreDb, 'orders'),
-      (snap) => {
-        const list: SpecialOrder[] = [];
-        snap.forEach((d) => list.push(d.data() as SpecialOrder));
-        list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-        setDb((prev) => ({ ...prev, orders: list }));
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'orders');
-      }
-    );
+      unsubOrders = onSnapshot(
+        collection(firestoreDb, 'orders'),
+        (snap) => {
+          const list: SpecialOrder[] = [];
+          snap.forEach((d) => list.push(d.data() as SpecialOrder));
+          list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+          updateLocalDb((prev) => ({ ...prev, orders: list }));
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.LIST, 'orders');
+        }
+      );
+    }
+
+    initRealtimeSync();
 
     return () => {
-      unsubSettings();
-      unsubPubs();
-      unsubPublishers();
-      unsubOrders();
+      active = false;
+      if (unsubSettings) unsubSettings();
+      if (unsubPubs) unsubPubs();
+      if (unsubPublishers) unsubPublishers();
+      if (unsubOrders) unsubOrders();
     };
   }, []);
 
@@ -187,7 +223,7 @@ export default function App() {
     }
   };
 
-  // --- Firestore Handlers ---
+  // --- Optimistic + Firestore Handlers ---
 
   const handleCreateOrder = async (payload: {
     publisherId: string;
@@ -204,14 +240,13 @@ export default function App() {
     const now = new Date().toISOString();
     const hasStockInHall = pub.stockCount > 0;
 
-    if (hasStockInHall) {
-      const updatedPub: Publication = {
-        ...pub,
-        stockCount: Math.max(0, pub.stockCount - reqQty),
-        updatedAt: now,
-      };
-      await savePublicationToFirestore(updatedPub);
-    }
+    const updatedPub: Publication | null = hasStockInHall
+      ? {
+          ...pub,
+          stockCount: Math.max(0, pub.stockCount - reqQty),
+          updatedAt: now,
+        }
+      : null;
 
     const newOrder: SpecialOrder = {
       id: `ord-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -230,6 +265,18 @@ export default function App() {
       updatedAt: now,
     };
 
+    // Optimistic UI update
+    updateLocalDb((prev) => ({
+      ...prev,
+      publications: updatedPub
+        ? prev.publications.map((p) => (p.id === updatedPub.id ? updatedPub : p))
+        : prev.publications,
+      orders: [newOrder, ...prev.orders],
+    }));
+
+    if (updatedPub) {
+      await savePublicationToFirestore(updatedPub);
+    }
     await saveOrderToFirestore(newOrder);
   };
 
@@ -250,10 +297,20 @@ export default function App() {
       updatedAt: now,
       deliveredAt: status === 'delivered' ? now : current.deliveredAt,
     };
+
+    updateLocalDb((prev) => ({
+      ...prev,
+      orders: prev.orders.map((o) => (o.id === orderId ? updated : o)),
+    }));
+
     await saveOrderToFirestore(updated);
   };
 
   const handleDeleteOrder = async (orderId: string) => {
+    updateLocalDb((prev) => ({
+      ...prev,
+      orders: prev.orders.filter((o) => o.id !== orderId),
+    }));
     await deleteOrderFromFirestore(orderId);
   };
 
@@ -266,9 +323,19 @@ export default function App() {
         status: 'ordered_branch' as OrderStatus,
         updatedAt: now,
       }));
-    if (toUpdate.length > 0) {
-      await batchUpdateOrdersInFirestore(toUpdate);
-    }
+
+    if (toUpdate.length === 0) return;
+
+    updateLocalDb((prev) => ({
+      ...prev,
+      orders: prev.orders.map((o) =>
+        o.status === 'requested'
+          ? { ...o, status: 'ordered_branch', updatedAt: now }
+          : o
+      ),
+    }));
+
+    await batchUpdateOrdersInFirestore(toUpdate);
   };
 
   const handleCreatePublication = async (pub: Partial<Publication>) => {
@@ -286,6 +353,12 @@ export default function App() {
       stockCount: Math.max(0, Number(pub.stockCount) || 0),
       updatedAt: now,
     };
+
+    updateLocalDb((prev) => ({
+      ...prev,
+      publications: [created, ...prev.publications],
+    }));
+
     await savePublicationToFirestore(created);
   };
 
@@ -300,10 +373,20 @@ export default function App() {
       ...patch,
       updatedAt: new Date().toISOString(),
     };
+
+    updateLocalDb((prev) => ({
+      ...prev,
+      publications: prev.publications.map((p) => (p.id === id ? updated : p)),
+    }));
+
     await savePublicationToFirestore(updated);
   };
 
   const handleDeletePublication = async (id: string) => {
+    updateLocalDb((prev) => ({
+      ...prev,
+      publications: prev.publications.filter((p) => p.id !== id),
+    }));
     await deletePublicationFromFirestore(id);
   };
 
@@ -319,6 +402,14 @@ export default function App() {
       phone: pub.phone.replace(/[^\d+]/g, ''),
       active: true,
     };
+
+    updateLocalDb((prev) => ({
+      ...prev,
+      publishers: [...prev.publishers, created].sort((a, b) =>
+        a.fullName.localeCompare(b.fullName, 'es')
+      ),
+    }));
+
     await savePublisherToFirestore(created);
   };
 
@@ -342,9 +433,16 @@ export default function App() {
       });
     });
 
-    if (added.length > 0) {
-      await bulkSavePublishersToFirestore(added);
-    }
+    if (added.length === 0) return;
+
+    updateLocalDb((prev) => ({
+      ...prev,
+      publishers: [...prev.publishers, ...added].sort((a, b) =>
+        a.fullName.localeCompare(b.fullName, 'es')
+      ),
+    }));
+
+    await bulkSavePublishersToFirestore(added);
   };
 
   const handleUpdatePublisher = async (
@@ -357,10 +455,22 @@ export default function App() {
       ...current,
       ...patch,
     };
+
+    updateLocalDb((prev) => ({
+      ...prev,
+      publishers: prev.publishers
+        .map((p) => (p.id === id ? updated : p))
+        .sort((a, b) => a.fullName.localeCompare(b.fullName, 'es')),
+    }));
+
     await savePublisherToFirestore(updated);
   };
 
   const handleDeletePublisher = async (id: string) => {
+    updateLocalDb((prev) => ({
+      ...prev,
+      publishers: prev.publishers.filter((p) => p.id !== id),
+    }));
     await deletePublisherFromFirestore(id);
   };
 
@@ -368,6 +478,11 @@ export default function App() {
     congregationName: string;
     adminPin: string;
   }) => {
+    updateLocalDb((prev) => ({
+      ...prev,
+      congregationName: settings.congregationName,
+      adminPin: settings.adminPin,
+    }));
     await saveSettingsToFirestore(settings);
   };
 
@@ -572,7 +687,7 @@ export default function App() {
         )}
       </main>
 
-      {/* PIN Modal for Literature Servant */}
+      {/* PIN Modal for Literature Servant (Does NOT reveal the PIN) */}
       {isPinModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
           <div className="w-full max-w-xs bg-white rounded-2xl border border-slate-200 shadow-xl p-5 space-y-4">
@@ -580,7 +695,7 @@ export default function App() {
               <div className="flex items-center gap-2 text-[#1E3A5F]">
                 <Lock className="w-4 h-4" />
                 <h2 className="text-sm font-semibold text-slate-900">
-                  PIN del Encargado
+                  Acceso del Encargado
                 </h2>
               </div>
               <button
@@ -593,7 +708,7 @@ export default function App() {
             </div>
 
             <p className="text-xs text-slate-600">
-              Ingresa el PIN (por defecto: <strong className="font-mono text-slate-900">{db.adminPin}</strong>)
+              Ingresa el código PIN de siervo de publicaciones para continuar.
             </p>
 
             <form onSubmit={handlePinSubmit} className="space-y-3">
@@ -606,7 +721,7 @@ export default function App() {
                   setPinInput(e.target.value);
                   setPinError('');
                 }}
-                placeholder="1914"
+                placeholder="••••"
                 className="w-full min-h-[46px] px-3 py-2 text-center text-lg font-mono tracking-widest border border-slate-300 rounded-xl"
               />
               {pinError && (

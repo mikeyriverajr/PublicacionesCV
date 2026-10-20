@@ -1,133 +1,70 @@
-# Sistema de Gestión de Publicaciones de la Congregación
+# Plan de Corrección: Persistencia Real en Firebase, Botones Activos y Ocultación del PIN
 
-Plataforma web gratuita, responsiva y optimizada para teléfonos móviles y escritorio, diseñada para que los publicadores soliciten publicaciones destacadas o del catálogo general, consulten las existencias actuales del mostrador y gestionen o cancelen sus pedidos, mientras el encargado administra pedidos especiales, existencias y avisos por WhatsApp desde su celular o computadora.
+Este plan resuelve los tres problemas detectados tras publicar la aplicación en GitHub Pages: que los botones (borrar, crear, editar, pedir) tengan efecto inmediato y permanente en Firebase Firestore, y que el código PIN del encargado nunca se muestre en la interfaz.
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Se han incorporado las 5 mejoras solicitadas junto con las decisiones previas para asegurar una experiencia ágil tanto para los publicadores como para el encargado desde el teléfono móvil.
+> Se identificaron las causas exactas por las que los botones parecían no hacer nada y por qué el PIN era visible:
 
-- **1. Añadir Publicadores en Masa (Nuevo)**: Herramienta de carga rápida en el panel del encargado donde se puede pegar una lista de hermanos (un publicador por línea o separado por comas: `Nombre Completo, Grupo, Teléfono`) copiada desde WhatsApp, notas o Excel para registrar a toda la congregación en segundos.
-- **2. Panel Administrativo Optimizado para Móvil (Nuevo)**: Diseño adaptable (*Mobile-First & Touch-Ready*) con botones táctiles amplios ($\ge 44\text{px}$), tarjetas de gestión rápida para usar con una sola mano en el mostrador del Salón del Reino y navegación inferior en pantallas pequeñas, además de vista de tabla completa en computadora.
-- **3. Consulta de Existencias para Publicadores (Confirmado y Reforzado)**: Pestaña dedicada **"Existencias en el Salón"** donde los publicadores ven en tiempo real qué publicaciones generales hay físicamente en el mostrador y cuántas unidades quedan disponibles.
-- **4. Cancelación de Pedidos por el Publicador (Nuevo)**: Los publicadores cuentan con un botón directo **"Cancelar pedido"** dentro de su vista **"Mis Pedidos"** para anular cualquier solicitud si cometieron un error o ya consiguieron la publicación.
-- **5. Publicaciones Destacadas para Pedido Rápido (Nuevo)**: El encargado puede marcar publicaciones como **"Destacadas"** (ej. *Examinando las Escrituras diariamente*, invitaciones de campaña o estrenos de asamblea). Estas aparecen al inicio de la pantalla del publicador para que puedan pedirlas en un solo toque sin buscar en la lista larga.
-- **Identificación y Notificaciones (Confirmado)**: Selección del nombre de la lista de publicadores (sin cuentas ni contraseñas) y botón directo de WhatsApp (`wa.me`) con mensaje prellenado cuando el pedido llega al Salón.
+1. **Causa de que nada se guardara ni borrara en Firebase (`firestore.rules` + estado local)**:
+   - En `firestore.rules`, la condición `allow list: if existing().id is string;` bloqueaba las consultas generales (`collection(db, 'publications')`, `'publishers'`, `'orders'`) porque el motor de consultas de Firestore rechaza lecturas de colecciones completas si la regla exige evaluar campos internos sin un filtro `where`.
+   - Al fallar esa lectura inicial, la carga de datos semilla (`ensureFirestoreSeeded`) y la suscripción en tiempo real (`onSnapshot`) eran rechazadas por permisos, dejando la pantalla congelada con los datos de ejemplo en memoria sin aplicar los cambios de ningún botón.
+2. **Solución de Persistencia y Respuesta Inmediata**:
+   - Ajustar `firestore.rules` (y desplegarlas a Firebase) para permitir las lecturas de las colecciones de la congregación (`allow get, list: if true;`) manteniendo la validación de datos al escribir y borrar.
+   - Implementar **actualización optimista inmediata** en el estado de React (`setDb`) además de la escritura en Firebase y el respaldo en `localStorage`, de modo que cada clic en cualquier botón (borrar publicador, cambiar stock, pedir, cancelar pedido, destacar publicación) actualice la pantalla al instante y persista en la nube.
+   - Guardar una bandera de inicialización (`seeded: true` en `/settings/main`) para que, una vez que el encargado borre los publicadores o publicaciones de prueba, **nunca vuelvan a reaparecer** al recargar la página.
+3. **Ocultar el PIN del Encargado en la Interfaz**:
+   - Eliminar el texto `(por defecto: {db.adminPin})` que aparecía dentro de la ventana emergente de acceso del encargado, para que ningún publicador pueda ver el PIN en pantalla.
 
 ---
 
 ### 1. Overview & Core Concept
 
-- **Qué Hace**:
-  1. **Portal del Publicador (Móvil y Web)**:
-     - **Selección rápida de nombre**: El hermano elige su nombre del directorio de la congregación (queda guardado en su dispositivo).
-     - **Sección de Publicaciones Destacadas**: Muestra en primer plano las publicaciones de temporada o campaña (ej. *Examinando las Escrituras*, folletos especiales, Biblias) con un botón **"Pedir 1 ejemplar"** o selector de cantidad inmediata sin recorrer todo el catálogo.
-     - **Catálogo Completo de Pedidos Especiales**: Buscador por nombre, código (`nwt`, `lff`, `bt`, `od`) o categoría para solicitar publicaciones personales.
-     - **Mis Pedidos y Cancelación**: Visualización clara del estado (*Solicitado*, *Pedido a la sucursal*, *Listo en el Salón*, *Entregado*) y opción para **cancelar el pedido** con confirmación inmediata.
-     - **Existencias en el Salón**: Lista clara y filtrable de las publicaciones generales que tienen stock físico en el mostrador de la congregación.
-  2. **Panel del Encargado (Optimizado para Celular y Escritorio)**:
-     - **Control Móvil de Pedidos Especiales**: Tarjetas táctiles en móvil (y tabla en PC) para cambiar el estado con un toque, filtrar por etapa y pulsar **"Avisar por WhatsApp"** cuando la publicación está lista para recoger.
-     - **Resumen Consolidado para Sucursal**: Suma automática de todos los pedidos pendientes agrupados por código e idioma para copiarlos fácilmente al sitio web de la sucursal y marcarlos como *"Pedidos a la sucursal"* en bloque.
-     - **Gestor de Catálogo, Destacados y Existencias**: Controles rápidos `+` / `-` para ajustar el stock del mostrador desde el celular, e interruptor de estrella (**"Destacar"**) para fijar publicaciones al inicio del portal de los publicadores.
-     - **Directorio con Carga Masiva de Publicadores**: Formulario individual y ventana de **Importación en Masa** para pegar decenas de nombres, grupos y teléfonos de una sola vez.
-
-- **Audiencia Objetivo**:
-  - **Publicadores de la congregación**: Hermanos de todas las edades que entran desde su teléfono para pedir una publicación destacada, revisar si llegó su pedido especial o consultar si hay existencias en el mostrador.
-  - **Encargado de publicaciones y auxiliares**: Hermanos que atienden el mostrador desde su celular o tablet y necesitan registrar entregas, actualizar stock o consolidar el pedido mensual a la sucursal.
+- **Qué Corrige**:
+  - **Efecto Real e Inmediato en Todos los Botones**: Crear, editar y borrar publicadores (individual o en masa), crear/borrar publicaciones, cambiar stock (`-` / `+`), destacar publicaciones, hacer pedidos y cancelarlos tendrá efecto inmediato en pantalla y quedará guardado permanentemente en Firebase Firestore.
+  - **No Reaparición de Datos Borrados**: Al marcar el documento `/settings/main` como inicializado, si el encargado borra los publicadores o publicaciones de ejemplo (incluso si deja la lista vacía temporalmente), el sistema respetará esa eliminación y no volverá a inyectar los datos de muestra.
+  - **Privacidad del PIN**: El modal de ingreso al panel del encargado solo mostrará el campo de contraseña enmascarado (`••••`) sin revelar jamás cuál es el PIN actual.
 
 ---
 
 ### 2. User Experience & Visual Design
 
-- **Flujos Principales de Usuario**:
-  1. **Pedir una Publicación Destacada sin Buscar en la Lista**:
-     - Al abrir la aplicación y seleccionar su nombre, el publicador ve en la parte superior el bloque **"Publicaciones Destacadas"**.
-     - Con un solo toque en **"Solicitar"** (pudiendo ajustar cantidad o idioma si aplica), el pedido queda registrado instantáneamente sin navegar por el catálogo largo.
-  2. **Consultar Estado o Cancelar un Pedido**:
-     - En **"Mis Pedidos"**, el publicador ve sus solicitudes activas con una barra de progreso de 4 etapas (*Solicitado* → *Pedido a sucursal* → *En el Salón* → *Entregado*).
-     - Si desea anular su solicitud, pulsa **"Cancelar pedido"** y confirma la acción; el pedido se elimina o marca como cancelado de inmediato para que el encargado no lo pida por demás.
-  3. **Ver Existencias del Mostrador**:
-     - En **"Existencias en el Salón"**, el publicador revisa las publicaciones generales divididas por categoría (Biblias, Libros, Folletos, Tratados, Revistas) con el indicador exacto de ejemplares disponibles en el mostrador.
-  4. **Gestión Móvil del Encargado e Importación Masiva**:
-     - En teléfonos móviles, el encargado cuenta con una barra inferior de acceso rápido a: *Pedidos*, *Lote Sucursal*, *Stock/Catálogo* y *Publicadores*.
-     - En *Publicadores*, pulsa **"Añadir en Masa"**, pega una lista de líneas (ej. `Juan Pérez, Grupo 1, 5215512345678` o simplemente los nombres uno debajo del otro), previsualiza cuántos hermanos se van a agregar y confirma con un toque.
-
-- **Identidad Visual y Ergonomía Móvil**:
-  - *Diseño Touch-First y Escritorio Completo*:
-    - Todos los botones, selectores de estado, controles de stock (`-` / `+`) y pestañas tienen un área táctil mínima de $44 \times 44\text{px}$ para evitar toques accidentales en el celular.
-    - En pantallas móviles ($375\text{px}$–$430\text{px}$), las tablas administrativas se transforman automáticamente en tarjetas apiladas limpias con acciones de pulgar claras; en escritorio ($1440\text{px}$), se expanden en tablas de alta densidad.
-  - *Paleta de Colores (Regla 60-30-10)*:
-    - **60 % Lienzo Neutro**: Blanco puro (`#FFFFFF`) sobre fondo piedra suave (`#F8FAFC`).
-    - **30 % Estructura**: Bordes sutiles de `1px` (`#E2E8F0`) y texto secundario legible (`#475569`).
-    - **10 % Acento y Estados Semánticos (Color + Icono + Texto)**:
-      - Azul Profundo (`#1E3A5F`): Acciones principales y publicaciones destacadas.
-      - Ámbar (`#D97706`): *Solicitado (Pendiente)*
-      - Azul (`#2563EB`): *Pedido a la sucursal*
-      - Verde Esmeralda (`#16A34A`): *En el Salón (Listo para recoger)* + Botón WhatsApp
-      - Pizarra (`#64748B`): *Entregado*
-  - *Tipografía*:
-    - Encabezados en `Plus Jakarta Sans`, texto de interfaz en `DM Sans` y códigos de publicación (`nwt`, `lff`, `es26`) y cantidades en `JetBrains Mono` (`tabular-nums`).
+- **Flujo Corregido en Todos los Controles**:
+  - Al pulsar **Eliminar** sobre un publicador, publicación o pedido: desaparece de inmediato de la lista y se elimina del servidor de Firebase Firestore.
+  - Al pulsar **`-` / `+`** en el stock o **Destacar**: el número y el estado cambian al instante en la interfaz y se sincronizan con Firebase.
+  - Al pulsar **Encargado**: se solicita únicamente introducir el PIN secreto sin mostrar pistas ni el valor del PIN en el texto del cuadro de diálogo.
 
 ---
 
 ### 3. Key Product Decisions & Trade-Offs
 
-- **Decisión 1: Publicaciones Destacadas Controladas por el Encargado**
-  - *Enfoque Elegido*: Campo booleano `isFeatured` (con nota opcional de campaña, ej. *"Anuario / Texto Diario 2027"* o *"Campaña Especial"*) que posiciona esas publicaciones arriba del todo con botón de pedido directo.
-  - *Por qué*: Gran parte de los pedidos especiales de una congregación ocurren en temporadas específicas (como el pedido anual de *Examinando las Escrituras*, agendas o publicaciones nuevas). Destacarlas ahorra tiempo a toda la congregación.
+- **Decisión 1: Actualización Optimista + Sincronización con Firestore**
+  - *Enfoque Elegido*: Cada acción actualiza primero el estado visual de la aplicación (`setDb`) y simultáneamente ejecuta la operación en Firebase Firestore (`setDoc` / `deleteDoc` / `writeBatch`).
+  - *Por qué*: Garantiza que la interfaz responda en 0 milisegundos al tocar cualquier botón en el celular y que los cambios queden guardados en la nube.
 
-- **Decisión 2: Importación Masiva Tolerante a Formatos Simples**
-  - *Enfoque Elegido*: Analizador de texto inteligente que acepta tanto solo nombres (uno por línea) como líneas separadas por coma, punto y coma o tabulación (`Nombre, Grupo, Teléfono` o `Nombre, Teléfono`).
-  - *Por qué*: El encargado suele tener la lista de los grupos de servicio en un mensaje de WhatsApp o en una hoja de cálculo; poder copiar y pegar directamente sin formatear archivos complejos ahorra muchísimo trabajo inicial.
-
-- **Decisión 3: Cancelación de Pedidos con Control Transparente**
-  - *Enfoque Elegido*: Los publicadores pueden cancelar sus pedidos directamente desde *"Mis Pedidos"*. Si el pedido aún estaba en estado *Solicitado*, se retira de la lista pendiente a pedir a la sucursal; si ya había sido pedido a la sucursal, se advierte al usuario al cancelar o se notifica al encargado.
+- **Decisión 2: Control de Semilla Inicial (`seeded: true` en `/settings/main`)**
+  - *Enfoque Elegido*: Verificar el documento `/settings/main` antes de cargar datos de ejemplo; una vez inicializado por primera vez, nunca vuelve a rellenar datos borrados.
+  - *Por qué*: Evita que al borrar todos los datos de ejemplo se vuelvan a crear automáticamente al refrescar la página.
 
 ---
 
 ### 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-- **Diagrama de Arquitectura y Componentes**:
-
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│            Navegación Adaptable (Barra Superior PC / Barra Inferior Móvil) │
-└───────────────────┬────────────────────────────────────┬───────────────────┘
-                    │                                    │
-        ┌───────────▼───────────┐            ┌───────────▼───────────┐
-        │  Portal Publicador    │            │  Panel Encargado      │
-        │  (Móvil y Escritorio) │            │  (Móvil Touch + PC)   │
-        └───────────┬───────────┘            └───────────┬───────────┘
-                    │                                    │
-   ┌───────────┬────┴──────┬───────────┐    ┌────────────┼───────────┬────────────┐
-   ▼           ▼           ▼           ▼    ▼            ▼           ▼            ▼
-┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────┐┌──────────┐┌──────────┐┌───────────┐┌──────────┐
-│Destaca- │ │Catálogo │ │Mis      │ │Stock││Pedidos   ││Resumen   ││Catálogo,  ││Directorio│
-│das (1   │ │Completo │ │Pedidos +│ │en el││Móvil +   ││Lote para ││Stock (+/-)││+ Carga   │
-│Toque)   │ │Especial │ │Cancelar │ │Salón││WhatsApp  ││Sucursal  ││y Destacar ││en Masa   │
-└────┬────┘ └────┬────┘ └────┬────┘ └──┬──┘└────┬─────┘└────┬─────┘└─────┬─────┘└────┬─────┘
-     │           │           │         │        │           │            │           │
-     └───────────┴───────────┴─────────┴───┬────┴───────────┴────────────┴───────────┘
-                                           │ API REST (/api/*)
-                                           ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│              Servidor Backend Express + Almacenamiento Persistente         │
-│  • /api/publications       (CRUD, toggle isFeatured, ajuste rápido stock)  │
-│  • /api/publishers         (CRUD individual + POST /api/publishers/bulk)   │
-│  • /api/orders             (Crear, cancelar pedido, cambiar estado, lote)  │
-└────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                   Acción del Usuario en un Botón                     │
+│  (Pedir · Cancelar · Borrar Hermano · Cambiar Stock · Destacar · PIN)│
+└──────────────────┬───────────────────────────────────┬───────────────┘
+                   │ 1. Actualización Inmediata (0ms)  │ 2. Escritura Cloud
+                   ▼                                   ▼
+        ┌─────────────────────┐             ┌─────────────────────┐
+        │ Estado Local React  │             │ Firebase Firestore  │
+        │ + localStorage      │◄────────────┤ (Reglas Corregidas  │
+        │ (UI se actualiza ya)│  onSnapshot │  y Desplegadas)     │
+        └─────────────────────┘             └─────────────────────┘
 ```
 
-- **Modelo de Datos Actualizado**:
-  - **Publicación (`Publication`)**:
-    - `id`, `code` (ej. `es26`, `nwtsty`, `lff`), `title`, `category`, `language`, `isSpecialOrderEligible` (booleano), `isGeneralStock` (booleano), `isFeatured` (booleano — **Nuevo** para destacar al inicio), `featuredNote` (texto opcional, ej. *"Pedido anual"*), `stockCount` (existencias actuales en el mostrador), `updatedAt`.
-  - **Publicador (`Publisher`)**:
-    - `id`, `fullName`, `groupName` (ej. *Grupo 1*), `phone` (para WhatsApp), `active`.
-  - **Pedido Especial (`SpecialOrder`)**:
-    - `id`, `publisherId`, `publisherName`, `publicationId`, `publicationCode`, `publicationTitle`, `language`, `quantity`, `notes`, `status` (`requested` | `ordered_branch` | `ready_pickup` | `delivered` | `cancelled`), `createdAt`, `updatedAt`.
-
-- **Mapeo de Interacciones Clave**:
-  - **Pedido Rápido de Destacados**: Tarjeta destacada en la parte superior del portal con botón **"Pedir ahora"** que abre confirmación instantánea con cantidad `1` por defecto (ajustable) y registra el pedido en un toque.
-  - **Importación en Masa (`POST /api/publishers/bulk`)**: Cuadro de texto multilínea con vista previa en vivo que detecta nombres, grupos y teléfonos, evita duplicados por nombre exacto e inserta todo el lote de una vez.
-  - **Cancelación por el Publicador (`DELETE /api/orders/:id` o cambio a `cancelled`)**: Botón accesible en cada pedido activo del publicador con confirmación en línea para evitar cancelaciones accidentales.
-  - **Vista de Existencias para Publicadores**: Filtra todas las publicaciones con `isGeneralStock: true`, mostrando claramente el número de ejemplares disponibles en el Salón del Reino (`Disponible: 18 uds.` o `Agotado temporalmente`).
+- **Ajustes en Reglas de Firestore (`firestore.rules`)**:
+  - Permitir `get` y `list` en `/settings/{settingId}`, `/publications/{publicationId}`, `/publishers/{publisherId}` y `/orders/{orderId}` sin bloqueos de filtro para que `onSnapshot` funcione tanto en AI Studio como en GitHub Pages.
+  - Mantener las validaciones de estructura y tipos en `create`, `update` y `delete`, y desplegar las reglas actualizadas directamente a Firebase mediante `DeployRules`.

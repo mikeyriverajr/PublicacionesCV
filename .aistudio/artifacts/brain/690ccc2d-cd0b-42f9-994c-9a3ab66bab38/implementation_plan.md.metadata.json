@@ -1,6 +1,6 @@
 {
-  "summary": "Plan de implementación actualizado con importación masiva de publicadores, panel administrativo optimizado para móvil, publicaciones destacadas para pedido rápido en 1 toque, vista de existencias para publicadores y cancelación de pedidos.",
-  "updatedAt": "2026-10-19T20:25:56.912755946Z",
+  "summary": "Plan de corrección para habilitar la lectura/escritura real en Firebase Firestore, actualizar el estado de la interfaz de forma inmediata en cada botón y ocultar el PIN del encargado en la ventana de acceso.",
+  "updatedAt": "2026-10-20T01:34:51.182942085Z",
   "requestFeedback": true,
   "userFacing": true
 }

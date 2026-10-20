@@ -21,6 +21,10 @@
           "type": "string",
           "description": "ISO timestamp of last update.",
           "maxLength": 64
+        },
+        "seeded": {
+          "type": "boolean",
+          "description": "Whether initial seed data has already been loaded."
         }
       },
       "required": ["congregationName", "adminPin", "updatedAt"]

@@ -21,10 +21,11 @@ service cloud.firestore {
 
     function isValidSettings(data) {
       return data.keys().hasAll(['congregationName', 'adminPin', 'updatedAt'])
-        && data.keys().hasOnly(['congregationName', 'adminPin', 'updatedAt'])
+        && data.keys().hasOnly(['congregationName', 'adminPin', 'updatedAt', 'seeded'])
         && data.congregationName is string && data.congregationName.size() >= 1 && data.congregationName.size() <= 120
         && data.adminPin is string && data.adminPin.size() >= 1 && data.adminPin.size() <= 32
-        && data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 64;
+        && data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 64
+        && (!('seeded' in data) || data.seeded is bool);
     }
 
     function isValidPublication(data) {
@@ -128,14 +129,14 @@ service cloud.firestore {
     // Settings collection
     match /settings/{settingId} {
       allow get: if isValidId(settingId);
-      allow list: if existing().congregationName is string;
+      allow list: if true;
       allow create, update: if isValidId(settingId) && isValidSettings(incoming());
     }
 
     // Publications collection
     match /publications/{publicationId} {
       allow get: if isValidId(publicationId);
-      allow list: if existing().id is string;
+      allow list: if true;
       allow create: if isValidId(publicationId)
         && isValidPublication(incoming())
         && incoming().id == publicationId;
@@ -148,7 +149,7 @@ service cloud.firestore {
     // Publishers collection
     match /publishers/{publisherId} {
       allow get: if isValidId(publisherId);
-      allow list: if existing().id is string;
+      allow list: if true;
       allow create: if isValidId(publisherId)
         && isValidPublisher(incoming())
         && incoming().id == publisherId;
@@ -161,7 +162,7 @@ service cloud.firestore {
     // Orders collection
     match /orders/{orderId} {
       allow get: if isValidId(orderId);
-      allow list: if existing().id is string;
+      allow list: if true;
       allow create: if isValidId(orderId)
         && isValidOrder(incoming())
         && incoming().id == orderId;

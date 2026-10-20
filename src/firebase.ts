@@ -4,6 +4,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocFromServer,
   getDocs,
   getFirestore,
@@ -91,7 +92,6 @@ async function testConnection() {
 }
 testConnection();
 
-// Sanitization helpers matching firebase-blueprint.json & firestore.rules
 function sanitizeId(raw: string): string {
   const cleaned = raw.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128);
   return cleaned || `id-${Date.now()}`;
@@ -167,38 +167,39 @@ export async function ensureFirestoreSeeded(): Promise<void> {
   if (isSeeding) return;
   isSeeding = true;
   try {
-    const pubsSnap = await getDocs(collection(db, 'publications'));
-    if (!pubsSnap.empty) {
+    const settingsSnap = await getDoc(doc(db, 'settings', 'main'));
+    if (settingsSnap.exists()) {
       return;
     }
 
+    const pubsSnap = await getDocs(collection(db, 'publications'));
     const batch = writeBatch(db);
     const now = new Date().toISOString().slice(0, 64);
 
-    // Seed settings
+    // Seed settings with seeded: true so deleted items never reappear
     batch.set(doc(db, 'settings', 'main'), {
       congregationName: INITIAL_DATABASE.congregationName.slice(0, 120),
       adminPin: INITIAL_DATABASE.adminPin.slice(0, 32),
       updatedAt: now,
+      seeded: true,
     });
 
-    // Seed publications
-    INITIAL_DATABASE.publications.forEach((p) => {
-      const clean = sanitizePublication(p);
-      batch.set(doc(db, 'publications', clean.id), clean);
-    });
+    if (pubsSnap.empty) {
+      INITIAL_DATABASE.publications.forEach((p) => {
+        const clean = sanitizePublication(p);
+        batch.set(doc(db, 'publications', clean.id), clean);
+      });
 
-    // Seed publishers
-    INITIAL_DATABASE.publishers.forEach((u) => {
-      const clean = sanitizePublisher(u);
-      batch.set(doc(db, 'publishers', clean.id), clean);
-    });
+      INITIAL_DATABASE.publishers.forEach((u) => {
+        const clean = sanitizePublisher(u);
+        batch.set(doc(db, 'publishers', clean.id), clean);
+      });
 
-    // Seed orders
-    INITIAL_DATABASE.orders.forEach((o) => {
-      const clean = sanitizeOrder(o);
-      batch.set(doc(db, 'orders', clean.id), clean);
-    });
+      INITIAL_DATABASE.orders.forEach((o) => {
+        const clean = sanitizeOrder(o);
+        batch.set(doc(db, 'orders', clean.id), clean);
+      });
+    }
 
     await batch.commit();
   } catch (error) {
@@ -218,6 +219,7 @@ export async function saveSettingsToFirestore(settings: {
       congregationName: (settings.congregationName || 'Congregación').trim().slice(0, 120),
       adminPin: (settings.adminPin || '1914').trim().slice(0, 32),
       updatedAt: new Date().toISOString().slice(0, 64),
+      seeded: true,
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
