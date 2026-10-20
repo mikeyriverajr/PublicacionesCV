@@ -240,7 +240,15 @@ async function startServer() {
       return;
     }
 
+    const reqQty = Math.max(1, Number(quantity) || 1);
     const now = new Date().toISOString();
+    const hasStockInHall = publication.stockCount > 0;
+
+    if (hasStockInHall) {
+      publication.stockCount = Math.max(0, publication.stockCount - reqQty);
+      publication.updatedAt = now;
+    }
+
     const order: SpecialOrder = {
       id: `ord-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       publisherId: publisher.id,
@@ -249,16 +257,20 @@ async function startServer() {
       publicationCode: publication.code,
       publicationTitle: publication.title,
       language: (customLanguage || publication.language || 'Español').trim(),
-      quantity: Math.max(1, Number(quantity) || 1),
-      notes: notes?.trim() || undefined,
-      status: 'requested',
+      quantity: reqQty,
+      notes: hasStockInHall
+        ? notes?.trim()
+          ? `${notes.trim()} (En existencia en mostrador)`
+          : 'En existencia en mostrador — Entregar en la reunión'
+        : notes?.trim() || undefined,
+      status: hasStockInHall ? 'ready_pickup' : 'requested',
       createdAt: now,
       updatedAt: now,
     };
 
     db.orders.unshift(order);
     saveDatabase(db);
-    res.json(order);
+    res.json({ order, publication, inStockAtHall: hasStockInHall });
   });
 
   // Update order status or details

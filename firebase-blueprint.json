@@ -1,0 +1,250 @@
+{
+  "entities": {
+    "CongregationSettings": {
+      "title": "CongregationSettings",
+      "description": "Global settings for the local congregation literature counter.",
+      "type": "object",
+      "properties": {
+        "congregationName": {
+          "type": "string",
+          "description": "Name of the congregation.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "adminPin": {
+          "type": "string",
+          "description": "PIN code for the literature servant panel.",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update.",
+          "maxLength": 64
+        }
+      },
+      "required": ["congregationName", "adminPin", "updatedAt"]
+    },
+    "Publication": {
+      "title": "Publication",
+      "description": "A publication available for special order or in general counter stock.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the publication.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "code": {
+          "type": "string",
+          "description": "Official publication code symbol (e.g. es27, nwtsty, lff).",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "title": {
+          "type": "string",
+          "description": "Full title of the publication.",
+          "minLength": 1,
+          "maxLength": 250
+        },
+        "category": {
+          "type": "string",
+          "description": "Publication category.",
+          "maxLength": 80
+        },
+        "language": {
+          "type": "string",
+          "description": "Publication language.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "isSpecialOrderEligible": {
+          "type": "boolean",
+          "description": "Whether publishers can request this item as a special order."
+        },
+        "isGeneralStock": {
+          "type": "boolean",
+          "description": "Whether this item is tracked in the general Kingdom Hall counter stock."
+        },
+        "isFeatured": {
+          "type": "boolean",
+          "description": "Whether this item is highlighted at the top for 1-tap quick ordering."
+        },
+        "featuredNote": {
+          "type": "string",
+          "description": "Optional note shown when the publication is featured.",
+          "maxLength": 300
+        },
+        "stockCount": {
+          "type": "number",
+          "description": "Current physical copies available at the literature counter."
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update.",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "title",
+        "category",
+        "language",
+        "isSpecialOrderEligible",
+        "isGeneralStock",
+        "isFeatured",
+        "stockCount",
+        "updatedAt"
+      ]
+    },
+    "Publisher": {
+      "title": "Publisher",
+      "description": "A congregation publisher in the alphabetical directory.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the publisher.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Full name of the publisher.",
+          "minLength": 1,
+          "maxLength": 150
+        },
+        "groupName": {
+          "type": "string",
+          "description": "Optional group label.",
+          "maxLength": 80
+        },
+        "phone": {
+          "type": "string",
+          "description": "Phone number for WhatsApp notification.",
+          "maxLength": 40
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the publisher is active in the directory."
+        }
+      },
+      "required": ["id", "fullName", "groupName", "phone", "active"]
+    },
+    "SpecialOrder": {
+      "title": "SpecialOrder",
+      "description": "A special publication request made by a publisher.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the order.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "publisherId": {
+          "type": "string",
+          "description": "ID of the requesting publisher.",
+          "maxLength": 128
+        },
+        "publisherName": {
+          "type": "string",
+          "description": "Name of the requesting publisher.",
+          "minLength": 1,
+          "maxLength": 150
+        },
+        "publicationId": {
+          "type": "string",
+          "description": "ID of the requested publication.",
+          "maxLength": 128
+        },
+        "publicationCode": {
+          "type": "string",
+          "description": "Code symbol of the requested publication.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "publicationTitle": {
+          "type": "string",
+          "description": "Title of the requested publication.",
+          "minLength": 1,
+          "maxLength": 250
+        },
+        "language": {
+          "type": "string",
+          "description": "Language of the requested publication.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "quantity": {
+          "type": "number",
+          "description": "Number of copies requested."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional notes for the order.",
+          "maxLength": 400
+        },
+        "status": {
+          "type": "string",
+          "description": "Current order lifecycle status.",
+          "enum": [
+            "requested",
+            "ordered_branch",
+            "ready_pickup",
+            "delivered",
+            "cancelled"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp when order was created.",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp when order was last updated.",
+          "maxLength": 64
+        },
+        "deliveredAt": {
+          "type": "string",
+          "description": "Optional ISO timestamp when order was delivered.",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "publisherId",
+        "publisherName",
+        "publicationId",
+        "publicationCode",
+        "publicationTitle",
+        "language",
+        "quantity",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/CongregationSettings" },
+      "description": "Stores congregation-level configuration and PIN."
+    },
+    "/publications/{publicationId}": {
+      "schema": { "$ref": "#/entities/Publication" },
+      "description": "Stores available publications, featured status, and counter stock counts."
+    },
+    "/publishers/{publisherId}": {
+      "schema": { "$ref": "#/entities/Publisher" },
+      "description": "Stores alphabetical list of congregation publishers."
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/SpecialOrder" },
+      "description": "Stores special publication orders and their fulfillment status."
+    }
+  }
+}

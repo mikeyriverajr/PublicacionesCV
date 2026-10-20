@@ -1,0 +1,177 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll(['congregationName', 'adminPin', 'updatedAt'])
+        && data.keys().hasOnly(['congregationName', 'adminPin', 'updatedAt'])
+        && data.congregationName is string && data.congregationName.size() >= 1 && data.congregationName.size() <= 120
+        && data.adminPin is string && data.adminPin.size() >= 1 && data.adminPin.size() <= 32
+        && data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidPublication(data) {
+      return data.keys().hasAll([
+          'id',
+          'code',
+          'title',
+          'category',
+          'language',
+          'isSpecialOrderEligible',
+          'isGeneralStock',
+          'isFeatured',
+          'stockCount',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'code',
+          'title',
+          'category',
+          'language',
+          'isSpecialOrderEligible',
+          'isGeneralStock',
+          'isFeatured',
+          'featuredNote',
+          'stockCount',
+          'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.code is string && data.code.size() >= 1 && data.code.size() <= 40
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 250
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 80
+        && data.language is string && data.language.size() >= 1 && data.language.size() <= 80
+        && data.isSpecialOrderEligible is bool
+        && data.isGeneralStock is bool
+        && data.isFeatured is bool
+        && (!('featuredNote' in data) || (data.featuredNote is string && data.featuredNote.size() <= 300))
+        && data.stockCount is number && data.stockCount >= 0 && data.stockCount <= 100000
+        && data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidPublisher(data) {
+      return data.keys().hasAll(['id', 'fullName', 'groupName', 'phone', 'active'])
+        && data.keys().hasOnly(['id', 'fullName', 'groupName', 'phone', 'active'])
+        && isValidId(data.id)
+        && data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 150
+        && data.groupName is string && data.groupName.size() <= 80
+        && data.phone is string && data.phone.size() <= 40
+        && data.active is bool;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll([
+          'id',
+          'publisherId',
+          'publisherName',
+          'publicationId',
+          'publicationCode',
+          'publicationTitle',
+          'language',
+          'quantity',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'publisherId',
+          'publisherName',
+          'publicationId',
+          'publicationCode',
+          'publicationTitle',
+          'language',
+          'quantity',
+          'notes',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'deliveredAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.publisherId)
+        && data.publisherName is string && data.publisherName.size() >= 1 && data.publisherName.size() <= 150
+        && isValidId(data.publicationId)
+        && data.publicationCode is string && data.publicationCode.size() >= 1 && data.publicationCode.size() <= 40
+        && data.publicationTitle is string && data.publicationTitle.size() >= 1 && data.publicationTitle.size() <= 250
+        && data.language is string && data.language.size() >= 1 && data.language.size() <= 80
+        && data.quantity is number && data.quantity >= 1 && data.quantity <= 500
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 400))
+        && data.status in ['requested', 'ordered_branch', 'ready_pickup', 'delivered', 'cancelled']
+        && data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64
+        && data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 64
+        && (!('deliveredAt' in data) || (data.deliveredAt is string && data.deliveredAt.size() <= 64));
+    }
+
+    // Connection test path
+    match /test/{docId} {
+      allow get: if isValidId(docId);
+    }
+
+    // Settings collection
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId);
+      allow list: if existing().congregationName is string;
+      allow create, update: if isValidId(settingId) && isValidSettings(incoming());
+    }
+
+    // Publications collection
+    match /publications/{publicationId} {
+      allow get: if isValidId(publicationId);
+      allow list: if existing().id is string;
+      allow create: if isValidId(publicationId)
+        && isValidPublication(incoming())
+        && incoming().id == publicationId;
+      allow update: if isValidId(publicationId)
+        && isValidPublication(incoming())
+        && incoming().id == existing().id;
+      allow delete: if isValidId(publicationId);
+    }
+
+    // Publishers collection
+    match /publishers/{publisherId} {
+      allow get: if isValidId(publisherId);
+      allow list: if existing().id is string;
+      allow create: if isValidId(publisherId)
+        && isValidPublisher(incoming())
+        && incoming().id == publisherId;
+      allow update: if isValidId(publisherId)
+        && isValidPublisher(incoming())
+        && incoming().id == existing().id;
+      allow delete: if isValidId(publisherId);
+    }
+
+    // Orders collection
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId);
+      allow list: if existing().id is string;
+      allow create: if isValidId(orderId)
+        && isValidOrder(incoming())
+        && incoming().id == orderId;
+      allow update: if isValidId(orderId)
+        && isValidOrder(incoming())
+        && incoming().id == existing().id
+        && incoming().publisherId == existing().publisherId
+        && incoming().publicationId == existing().publicationId
+        && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(orderId);
+    }
+  }
+}

@@ -19,25 +19,32 @@ import {
   Publisher,
   SpecialOrder,
 } from './types';
+import {
+  batchUpdateOrdersInFirestore,
+  bulkSavePublishersToFirestore,
+  collection,
+  db as firestoreDb,
+  deleteOrderFromFirestore,
+  deletePublicationFromFirestore,
+  deletePublisherFromFirestore,
+  doc,
+  ensureFirestoreSeeded,
+  handleFirestoreError,
+  onSnapshot,
+  OperationType,
+  saveOrderToFirestore,
+  savePublicationToFirestore,
+  savePublisherToFirestore,
+  saveSettingsToFirestore,
+} from './firebase';
 import { PublisherPortal, PublisherTab } from './components/PublisherPortal';
 import { ServantPanel, ServantTab } from './components/ServantPanel';
 
-const LOCAL_STORAGE_DB_KEY = 'congregation_publications_db_v1';
 const LOCAL_STORAGE_PUBLISHER_ID_KEY = 'congregation_selected_publisher_id';
 const LOCAL_STORAGE_SERVANT_AUTH_KEY = 'congregation_servant_authenticated';
 
 export default function App() {
-  const [db, setDb] = useState<AppDatabase>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_DB_KEY);
-      if (saved) {
-        return JSON.parse(saved) as AppDatabase;
-      }
-    } catch {
-      // Fallback to initial seed data
-    }
-    return INITIAL_DATABASE;
-  });
+  const [db, setDb] = useState<AppDatabase>(INITIAL_DATABASE);
 
   const [mode, setMode] = useState<'publisher' | 'servant'>('publisher');
   const [publisherTab, setPublisherTab] = useState<PublisherTab>('catalog');
@@ -70,35 +77,83 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
+  // Seed Firestore if empty and subscribe to real-time updates
   useEffect(() => {
-    let mounted = true;
-    fetch('/api/state')
-      .then((res) => {
-        if (!res.ok) throw new Error('Backend unavailable');
-        return res.json();
-      })
-      .then((data: AppDatabase) => {
-        if (mounted && data && Array.isArray(data.publications)) {
-          setDb(data);
-          localStorage.setItem(LOCAL_STORAGE_DB_KEY, JSON.stringify(data));
+    ensureFirestoreSeeded().catch((err) => {
+      console.error('Seed check error:', err);
+    });
+
+    const unsubSettings = onSnapshot(
+      doc(firestoreDb, 'settings', 'main'),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setDb((prev) => ({
+            ...prev,
+            congregationName:
+              typeof data.congregationName === 'string'
+                ? data.congregationName
+                : prev.congregationName,
+            adminPin:
+              typeof data.adminPin === 'string' ? data.adminPin : prev.adminPin,
+          }));
         }
-      })
-      .catch(() => {
-        // Fallback to localStorage
-      });
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'settings/main');
+      }
+    );
+
+    const unsubPubs = onSnapshot(
+      collection(firestoreDb, 'publications'),
+      (snap) => {
+        if (!snap.empty) {
+          const pubs: Publication[] = [];
+          snap.forEach((d) => pubs.push(d.data() as Publication));
+          pubs.sort((a, b) => a.title.localeCompare(b.title, 'es'));
+          setDb((prev) => ({ ...prev, publications: pubs }));
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'publications');
+      }
+    );
+
+    const unsubPublishers = onSnapshot(
+      collection(firestoreDb, 'publishers'),
+      (snap) => {
+        if (!snap.empty) {
+          const list: Publisher[] = [];
+          snap.forEach((d) => list.push(d.data() as Publisher));
+          list.sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
+          setDb((prev) => ({ ...prev, publishers: list }));
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'publishers');
+      }
+    );
+
+    const unsubOrders = onSnapshot(
+      collection(firestoreDb, 'orders'),
+      (snap) => {
+        const list: SpecialOrder[] = [];
+        snap.forEach((d) => list.push(d.data() as SpecialOrder));
+        list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        setDb((prev) => ({ ...prev, orders: list }));
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'orders');
+      }
+    );
+
     return () => {
-      mounted = false;
+      unsubSettings();
+      unsubPubs();
+      unsubPublishers();
+      unsubOrders();
     };
   }, []);
-
-  const persistLocal = (nextDb: AppDatabase) => {
-    setDb(nextDb);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_DB_KEY, JSON.stringify(nextDb));
-    } catch {
-      // Ignore storage errors
-    }
-  };
 
   const handleSelectPublisherId = (id: string) => {
     setSelectedPublisherId(id);
@@ -132,7 +187,7 @@ export default function App() {
     }
   };
 
-  // --- API & State Handlers ---
+  // --- Firestore Handlers ---
 
   const handleCreateOrder = async (payload: {
     publisherId: string;
@@ -141,46 +196,41 @@ export default function App() {
     notes?: string;
     customLanguage?: string;
   }) => {
-    try {
-      const res = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        const created: SpecialOrder = await res.json();
-        persistLocal({
-          ...db,
-          orders: [created, ...db.orders],
-        });
-        return;
-      }
-    } catch {
-      // Fallback local
-    }
-
     const pub = db.publications.find((p) => p.id === payload.publicationId);
     const usr = db.publishers.find((p) => p.id === payload.publisherId);
     if (!pub || !usr) return;
+
+    const reqQty = Math.max(1, Math.min(500, Number(payload.quantity) || 1));
     const now = new Date().toISOString();
-    const fallbackOrder: SpecialOrder = {
-      id: `ord-${Date.now()}`,
+    const hasStockInHall = pub.stockCount > 0;
+
+    if (hasStockInHall) {
+      const updatedPub: Publication = {
+        ...pub,
+        stockCount: Math.max(0, pub.stockCount - reqQty),
+        updatedAt: now,
+      };
+      await savePublicationToFirestore(updatedPub);
+    }
+
+    const newOrder: SpecialOrder = {
+      id: `ord-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       publisherId: usr.id,
       publisherName: usr.fullName,
       publicationId: pub.id,
       publicationCode: pub.code,
       publicationTitle: pub.title,
-      language: payload.customLanguage || pub.language,
-      quantity: payload.quantity,
-      notes: payload.notes,
-      status: 'requested',
+      language: payload.customLanguage || pub.language || 'Español',
+      quantity: reqQty,
+      notes: hasStockInHall
+        ? 'En existencia en mostrador — Entregar en la reunión'
+        : payload.notes,
+      status: hasStockInHall ? 'ready_pickup' : 'requested',
       createdAt: now,
       updatedAt: now,
     };
-    persistLocal({
-      ...db,
-      orders: [fallbackOrder, ...db.orders],
-    });
+
+    await saveOrderToFirestore(newOrder);
   };
 
   const handleCancelOrder = async (orderId: string) => {
@@ -191,163 +241,70 @@ export default function App() {
     orderId: string,
     status: OrderStatus
   ) => {
-    try {
-      const res = await fetch(`/api/orders/${orderId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      });
-      if (res.ok) {
-        const updated: SpecialOrder = await res.json();
-        persistLocal({
-          ...db,
-          orders: db.orders.map((o) => (o.id === orderId ? updated : o)),
-        });
-        return;
-      }
-    } catch {
-      // Fallback local
-    }
-
+    const current = db.orders.find((o) => o.id === orderId);
+    if (!current) return;
     const now = new Date().toISOString();
-    persistLocal({
-      ...db,
-      orders: db.orders.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              status,
-              updatedAt: now,
-              deliveredAt: status === 'delivered' ? now : o.deliveredAt,
-            }
-          : o
-      ),
-    });
+    const updated: SpecialOrder = {
+      ...current,
+      status,
+      updatedAt: now,
+      deliveredAt: status === 'delivered' ? now : current.deliveredAt,
+    };
+    await saveOrderToFirestore(updated);
   };
 
   const handleDeleteOrder = async (orderId: string) => {
-    try {
-      await fetch(`/api/orders/${orderId}`, { method: 'DELETE' });
-    } catch {
-      // Fallback local
-    }
-    persistLocal({
-      ...db,
-      orders: db.orders.filter((o) => o.id !== orderId),
-    });
+    await deleteOrderFromFirestore(orderId);
   };
 
   const handleBatchMarkOrdered = async () => {
-    try {
-      const res = await fetch('/api/orders/batch-mark-ordered', {
-        method: 'POST',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        persistLocal({
-          ...db,
-          orders: data.orders,
-        });
-        return;
-      }
-    } catch {
-      // Fallback local
-    }
-
     const now = new Date().toISOString();
-    persistLocal({
-      ...db,
-      orders: db.orders.map((o) =>
-        o.status === 'requested'
-          ? { ...o, status: 'ordered_branch', updatedAt: now }
-          : o
-      ),
-    });
+    const toUpdate = db.orders
+      .filter((o) => o.status === 'requested')
+      .map((o) => ({
+        ...o,
+        status: 'ordered_branch' as OrderStatus,
+        updatedAt: now,
+      }));
+    if (toUpdate.length > 0) {
+      await batchUpdateOrdersInFirestore(toUpdate);
+    }
   };
 
   const handleCreatePublication = async (pub: Partial<Publication>) => {
-    try {
-      const res = await fetch('/api/publications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(pub),
-      });
-      if (res.ok) {
-        const created: Publication = await res.json();
-        persistLocal({
-          ...db,
-          publications: [created, ...db.publications],
-        });
-        return;
-      }
-    } catch {
-      // Fallback local
-    }
-
     const now = new Date().toISOString();
     const created: Publication = {
-      id: `pub-${Date.now()}`,
-      code: pub.code || 'cod',
-      title: pub.title || 'Publicación',
+      id: `pub-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      code: (pub.code || 'cod').trim(),
+      title: (pub.title || 'Publicación').trim(),
       category: pub.category || 'Libros',
-      language: pub.language || 'Español',
+      language: (pub.language || 'Español').trim(),
       isSpecialOrderEligible: pub.isSpecialOrderEligible ?? true,
       isGeneralStock: pub.isGeneralStock ?? true,
       isFeatured: pub.isFeatured ?? false,
-      featuredNote: pub.featuredNote || '',
-      stockCount: pub.stockCount ?? 0,
+      featuredNote: pub.featuredNote?.trim() || '',
+      stockCount: Math.max(0, Number(pub.stockCount) || 0),
       updatedAt: now,
     };
-    persistLocal({
-      ...db,
-      publications: [created, ...db.publications],
-    });
+    await savePublicationToFirestore(created);
   };
 
   const handleUpdatePublication = async (
     id: string,
     patch: Partial<Publication>
   ) => {
-    try {
-      const res = await fetch(`/api/publications/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      });
-      if (res.ok) {
-        const updated: Publication = await res.json();
-        persistLocal({
-          ...db,
-          publications: db.publications.map((p) =>
-            p.id === id ? updated : p
-          ),
-        });
-        return;
-      }
-    } catch {
-      // Fallback local
-    }
-
-    persistLocal({
-      ...db,
-      publications: db.publications.map((p) =>
-        p.id === id
-          ? { ...p, ...patch, updatedAt: new Date().toISOString() }
-          : p
-      ),
-    });
+    const current = db.publications.find((p) => p.id === id);
+    if (!current) return;
+    const updated: Publication = {
+      ...current,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    await savePublicationToFirestore(updated);
   };
 
   const handleDeletePublication = async (id: string) => {
-    try {
-      await fetch(`/api/publications/${id}`, { method: 'DELETE' });
-    } catch {
-      // Fallback local
-    }
-    persistLocal({
-      ...db,
-      publications: db.publications.filter((p) => p.id !== id),
-    });
+    await deletePublicationFromFirestore(id);
   };
 
   const handleCreatePublisher = async (pub: {
@@ -355,64 +312,19 @@ export default function App() {
     groupName: string;
     phone: string;
   }) => {
-    try {
-      const res = await fetch('/api/publishers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(pub),
-      });
-      if (res.ok) {
-        const created: Publisher = await res.json();
-        const nextList = [...db.publishers, created].sort((a, b) =>
-          a.fullName.localeCompare(b.fullName, 'es')
-        );
-        persistLocal({
-          ...db,
-          publishers: nextList,
-        });
-        return;
-      }
-    } catch {
-      // Fallback local
-    }
-
     const created: Publisher = {
-      id: `usr-${Date.now()}`,
-      fullName: pub.fullName,
-      groupName: pub.groupName,
+      id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      fullName: pub.fullName.trim(),
+      groupName: pub.groupName.trim(),
       phone: pub.phone.replace(/[^\d+]/g, ''),
       active: true,
     };
-    const nextList = [...db.publishers, created].sort((a, b) =>
-      a.fullName.localeCompare(b.fullName, 'es')
-    );
-    persistLocal({
-      ...db,
-      publishers: nextList,
-    });
+    await savePublisherToFirestore(created);
   };
 
   const handleBulkAddPublishers = async (
     items: Array<{ fullName: string; groupName: string; phone: string }>
   ) => {
-    try {
-      const res = await fetch('/api/publishers/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        persistLocal({
-          ...db,
-          publishers: data.publishers,
-        });
-        return;
-      }
-    } catch {
-      // Fallback local
-    }
-
     const existing = new Set(
       db.publishers.map((p) => p.fullName.trim().toLowerCase())
     );
@@ -422,7 +334,7 @@ export default function App() {
       if (!lower || existing.has(lower)) return;
       existing.add(lower);
       added.push({
-        id: `usr-${Date.now()}-${idx}`,
+        id: `usr-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
         fullName: it.fullName.trim(),
         groupName: '',
         phone: it.phone.replace(/[^\d+]/g, ''),
@@ -430,79 +342,33 @@ export default function App() {
       });
     });
 
-    const nextList = [...db.publishers, ...added].sort((a, b) =>
-      a.fullName.localeCompare(b.fullName, 'es')
-    );
-    persistLocal({
-      ...db,
-      publishers: nextList,
-    });
+    if (added.length > 0) {
+      await bulkSavePublishersToFirestore(added);
+    }
   };
 
   const handleUpdatePublisher = async (
     id: string,
     patch: Partial<Publisher>
   ) => {
-    try {
-      const res = await fetch(`/api/publishers/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      });
-      if (res.ok) {
-        const updated: Publisher = await res.json();
-        const nextList = db.publishers
-          .map((p) => (p.id === id ? updated : p))
-          .sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
-        persistLocal({
-          ...db,
-          publishers: nextList,
-        });
-        return;
-      }
-    } catch {
-      // Fallback local
-    }
-
-    const nextList = db.publishers
-      .map((p) => (p.id === id ? { ...p, ...patch } : p))
-      .sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
-    persistLocal({
-      ...db,
-      publishers: nextList,
-    });
+    const current = db.publishers.find((p) => p.id === id);
+    if (!current) return;
+    const updated: Publisher = {
+      ...current,
+      ...patch,
+    };
+    await savePublisherToFirestore(updated);
   };
 
   const handleDeletePublisher = async (id: string) => {
-    try {
-      await fetch(`/api/publishers/${id}`, { method: 'DELETE' });
-    } catch {
-      // Fallback local
-    }
-    persistLocal({
-      ...db,
-      publishers: db.publishers.filter((p) => p.id !== id),
-    });
+    await deletePublisherFromFirestore(id);
   };
 
   const handleUpdateSettings = async (settings: {
     congregationName: string;
     adminPin: string;
   }) => {
-    try {
-      await fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
-      });
-    } catch {
-      // Fallback local
-    }
-    persistLocal({
-      ...db,
-      congregationName: settings.congregationName,
-      adminPin: settings.adminPin,
-    });
+    await saveSettingsToFirestore(settings);
   };
 
   const activePublisherOrdersCount = db.orders.filter(

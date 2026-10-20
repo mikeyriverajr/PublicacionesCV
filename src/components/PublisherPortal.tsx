@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Check,
+  ChevronDown,
   Clock,
   Minus,
   PackageCheck,
@@ -9,6 +10,8 @@ import {
   ShoppingBag,
   Star,
   Truck,
+  UserCheck,
+  X,
   XCircle,
 } from 'lucide-react';
 import {
@@ -51,12 +54,26 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
   onCancelOrder,
   showToast,
 }) => {
+  // Searchable + Selectable Publisher Combobox State
+  const [isNamePickerOpen, setIsNamePickerOpen] = useState(false);
+  const [nameSearchQuery, setNameSearchQuery] = useState('');
+
+  // Catalog search & quantity state
   const [searchQuery, setSearchQuery] = useState('');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [submittingPubId, setSubmittingPubId] = useState<string | null>(null);
 
+  // In-stock modal state (when ordering an item that is already in stock)
+  const [inStockNoticePub, setInStockNoticePub] = useState<{
+    title: string;
+    code: string;
+    quantity: number;
+  } | null>(null);
+
+  // Stock view search
   const [stockSearch, setStockSearch] = useState('');
 
+  // Cancel confirmation state
   const [confirmCancelOrderId, setConfirmCancelOrderId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
@@ -66,6 +83,14 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
       .filter((p) => p.active)
       .sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
   }, [publishers]);
+
+  const filteredPublishers = useMemo(() => {
+    const q = nameSearchQuery.trim().toLowerCase();
+    if (!q) return sortedPublishers;
+    return sortedPublishers.filter((p) =>
+      p.fullName.toLowerCase().includes(q)
+    );
+  }, [sortedPublishers, nameSearchQuery]);
 
   const selectedPublisher = useMemo(
     () => sortedPublishers.find((p) => p.id === selectedPublisherId) || null,
@@ -78,7 +103,7 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
     [publications]
   );
 
-  // Special order catalog (filtered only by simple search)
+  // Special order catalog
   const catalogPublications = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return publications.filter((p) => {
@@ -129,11 +154,15 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
 
   const handleRequestPublication = async (pub: Publication) => {
     if (!selectedPublisher) {
-      showToast('Selecciona tu nombre primero arriba.');
+      setIsNamePickerOpen(true);
+      showToast('Por favor selecciona o escribe tu nombre primero.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
     const quantity = getQty(pub.id);
+    const hadStock = pub.stockCount > 0;
+
     setSubmittingPubId(pub.id);
     try {
       await onCreateOrder({
@@ -142,7 +171,16 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
         quantity,
       });
       setQuantities((prev) => ({ ...prev, [pub.id]: 1 }));
-      showToast(`Pedido registrado: ${quantity} × ${pub.title}`);
+
+      if (hadStock) {
+        setInStockNoticePub({
+          title: pub.title,
+          code: pub.code,
+          quantity,
+        });
+      } else {
+        showToast(`Pedido registrado: ${quantity} × ${pub.title}`);
+      }
     } finally {
       setSubmittingPubId(null);
     }
@@ -161,30 +199,89 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
 
   return (
     <div className="space-y-4 pb-8">
-      {/* Alphabetical Publisher Selector (Simple, 1-line mobile friendly) */}
+      {/* Searchable & Selectable Publisher Combobox (Alphabetical A-Z) */}
       <section className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 space-y-3">
-        <div>
-          <label
-            htmlFor="publisher-select"
-            className="block text-xs font-medium text-slate-600 mb-1"
-          >
-            Tu nombre (orden alfabético):
+        <div className="space-y-2">
+          <label className="block text-xs font-medium text-slate-600">
+            Tu nombre (toca para elegir de la lista o escribe para buscar):
           </label>
-          <select
-            id="publisher-select"
-            value={selectedPublisherId}
-            onChange={(e) => onSelectPublisherId(e.target.value)}
-            className="w-full min-h-[46px] px-3 py-2 text-sm sm:text-base font-semibold text-slate-900 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]"
-          >
-            <option value="" disabled>
-              -- Selecciona tu nombre --
-            </option>
-            {sortedPublishers.map((pub) => (
-              <option key={pub.id} value={pub.id}>
-                {pub.fullName}
-              </option>
-            ))}
-          </select>
+
+          {!isNamePickerOpen && selectedPublisher ? (
+            <button
+              type="button"
+              onClick={() => {
+                setNameSearchQuery('');
+                setIsNamePickerOpen(true);
+              }}
+              className="w-full min-h-[46px] px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-xl flex items-center justify-between gap-2 text-left transition-colors"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <UserCheck className="w-4 h-4 text-[#1E3A5F] shrink-0" />
+                <span className="text-sm sm:text-base font-semibold text-slate-900 truncate">
+                  {selectedPublisher.fullName}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 text-xs font-medium text-[#1E3A5F] shrink-0">
+                <span>Cambiar / Buscar</span>
+                <ChevronDown className="w-4 h-4" />
+              </div>
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <div className="relative flex items-center">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                <input
+                  type="text"
+                  autoFocus={isNamePickerOpen}
+                  value={nameSearchQuery}
+                  onChange={(e) => setNameSearchQuery(e.target.value)}
+                  placeholder="Escribe tu nombre o selecciónalo abajo..."
+                  className="w-full min-h-[46px] pl-10 pr-10 py-2 text-sm bg-white border-2 border-[#1E3A5F] rounded-xl focus:outline-none"
+                />
+                {selectedPublisher && (
+                  <button
+                    type="button"
+                    onClick={() => setIsNamePickerOpen(false)}
+                    className="absolute right-2.5 p-1.5 text-slate-400 hover:text-slate-700 rounded-lg"
+                    aria-label="Cerrar buscador"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              <div className="max-h-52 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white">
+                {filteredPublishers.length === 0 ? (
+                  <div className="p-3 text-xs text-slate-500 text-center">
+                    No se encontró ningún hermano con «{nameSearchQuery}».
+                  </div>
+                ) : (
+                  filteredPublishers.map((pub) => {
+                    const isSelected = pub.id === selectedPublisherId;
+                    return (
+                      <button
+                        key={pub.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectPublisherId(pub.id);
+                          setIsNamePickerOpen(false);
+                          setNameSearchQuery('');
+                        }}
+                        className={`w-full min-h-[44px] px-3.5 py-2.5 text-left text-sm flex items-center justify-between gap-2 transition-colors ${
+                          isSelected
+                            ? 'bg-[#1E3A5F] text-white font-semibold'
+                            : 'hover:bg-slate-50 text-slate-800'
+                        }`}
+                      >
+                        <span className="truncate">{pub.fullName}</span>
+                        {isSelected && <Check className="w-4 h-4 shrink-0" />}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {myReadyOrders.length > 0 && (
@@ -230,6 +327,11 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
                           </span>
                           {' · '}
                           <span>{pub.language}</span>
+                          {pub.stockCount > 0 && (
+                            <span className="text-emerald-700 font-medium">
+                              {' · '}En existencia ({pub.stockCount})
+                            </span>
+                          )}
                         </div>
                         <h3 className="text-sm sm:text-base font-semibold text-slate-900 leading-snug">
                           {pub.title}
@@ -284,7 +386,7 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
           {/* Simple Full List with a Single Search Bar */}
           <section className="space-y-3">
             <h2 className="text-sm sm:text-base font-bold text-slate-900 px-1">
-              Todas las publicaciones para pedido especial
+              Todas las publicaciones disponibles
             </h2>
 
             <div className="relative">
@@ -401,7 +503,9 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
               {myOrders.map((order) => {
                 const statusInfo = STATUS_CONFIG[order.status];
                 const canCancel =
-                  order.status === 'requested' || order.status === 'ordered_branch';
+                  order.status === 'requested' ||
+                  order.status === 'ordered_branch' ||
+                  order.status === 'ready_pickup';
                 const isConfirmingCancel = confirmCancelOrderId === order.id;
 
                 return (
@@ -428,6 +532,11 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
                           <span className="font-mono text-[#1E3A5F]">{order.quantity} ×</span>{' '}
                           {order.publicationTitle}
                         </h3>
+                        {order.notes && (
+                          <p className="text-xs text-emerald-700 font-medium">
+                            {order.notes}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -542,6 +651,40 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
             })}
           </div>
         </section>
+      )}
+
+      {/* Modal Notice when ordering a publication that is ALREADY IN STOCK */}
+      {inStockNoticePub && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 shadow-xl p-5 space-y-4 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
+              <PackageCheck className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-base font-bold text-slate-900">
+                ¡Disponible en el mostrador!
+              </h3>
+              <p className="text-sm text-slate-700 leading-relaxed">
+                <strong>
+                  {inStockNoticePub.quantity} × {inStockNoticePub.title}
+                </strong>{' '}
+                ya está en existencia en el Salón.{' '}
+                <strong className="text-emerald-800">
+                  El encargado de publicaciones te la entregará en la reunión.
+                </strong>
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setInStockNoticePub(null)}
+              className="w-full min-h-[44px] px-4 py-2.5 bg-[#1E3A5F] text-white text-sm font-semibold rounded-xl"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
