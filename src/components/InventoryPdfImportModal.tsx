@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -31,7 +31,6 @@ export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = (
   onConfirmImport,
   showToast,
 }) => {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -46,6 +45,26 @@ export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = (
     });
     return map;
   }, [existingPublications]);
+
+  const summary = useMemo(() => {
+    if (!report) return { updatesCount: 0, newCount: 0, selectedTotal: 0 };
+    let updatesCount = 0;
+    let newCount = 0;
+    let selectedTotal = 0;
+
+    report.items.forEach((item) => {
+      const key = item.code.toLowerCase();
+      if (!selectedCodes.has(key)) return;
+      selectedTotal++;
+      if (existingByCode.has(key)) {
+        updatesCount++;
+      } else {
+        newCount++;
+      }
+    });
+
+    return { updatesCount, newCount, selectedTotal };
+  }, [report, selectedCodes, existingByCode]);
 
   if (!isOpen) return null;
 
@@ -139,31 +158,13 @@ export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = (
       handleClose();
     } catch (err) {
       console.error('Error al guardar inventario:', err);
-      setErrorMessage('Ocurrió un error al guardar los cambios en la base de datos.');
+      setErrorMessage(
+        'Ocurrió un error al guardar los cambios en la base de datos.'
+      );
     } finally {
       setIsSaving(false);
     }
   };
-
-  const summary = useMemo(() => {
-    if (!report) return { updatesCount: 0, newCount: 0, selectedTotal: 0 };
-    let updatesCount = 0;
-    let newCount = 0;
-    let selectedTotal = 0;
-
-    report.items.forEach((item) => {
-      const key = item.code.toLowerCase();
-      if (!selectedCodes.has(key)) return;
-      selectedTotal++;
-      if (existingByCode.has(key)) {
-        updatesCount++;
-      } else {
-        newCount++;
-      }
-    });
-
-    return { updatesCount, newCount, selectedTotal };
-  }, [report, selectedCodes, existingByCode]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-4">
@@ -193,20 +194,12 @@ export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = (
 
         {/* Modal Body */}
         <div className="p-4 overflow-y-auto space-y-4 flex-1">
-          {/* File Upload Box */}
+          {/* File Upload Box using native <label> so file dialog always opens reliably */}
           <div className="bg-slate-50 border border-dashed border-slate-300 rounded-2xl p-4 text-center space-y-3">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-
             <div className="space-y-1">
               <p className="text-xs sm:text-sm font-semibold text-slate-800">
                 {fileName
-                  ? `Archivo cargado: ${fileName}`
+                  ? `Archivo seleccionado: ${fileName}`
                   : 'Selecciona el PDF de Informe de Inventario de JW Hub'}
               </p>
               <p className="text-xs text-slate-500">
@@ -215,11 +208,10 @@ export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = (
             </div>
 
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                disabled={isParsing}
-                onClick={() => fileInputRef.current?.click()}
-                className="min-h-[42px] px-4 py-2 bg-[#1E3A5F] text-white text-xs sm:text-sm font-medium rounded-xl inline-flex items-center gap-2 disabled:opacity-60"
+              <label
+                className={`min-h-[42px] px-4 py-2 bg-[#1E3A5F] hover:bg-slate-800 text-white text-xs sm:text-sm font-medium rounded-xl inline-flex items-center gap-2 cursor-pointer transition-colors ${
+                  isParsing ? 'opacity-60 pointer-events-none' : ''
+                }`}
               >
                 <Upload className="w-4 h-4" />
                 <span>
@@ -229,7 +221,14 @@ export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = (
                     ? 'Cambiar archivo PDF'
                     : 'Seleccionar archivo PDF'}
                 </span>
-              </button>
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  disabled={isParsing}
+                  onChange={handleFileChange}
+                  className="sr-only"
+                />
+              </label>
             </div>
           </div>
 

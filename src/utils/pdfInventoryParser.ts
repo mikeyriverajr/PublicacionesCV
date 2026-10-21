@@ -1,8 +1,4 @@
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { PublicationCategory } from '../types';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 export interface ParsedInventoryRow {
   code: string;
@@ -111,11 +107,6 @@ function parseLinesFromText(lines: string[]): ParsedInventoryReport {
     }
 
     // Match publication row: (code) Title Quantity
-    // Examples:
-    // (nwt) Traducción del Nuevo Mundo 52
-    // (sjjls) Cantemos con gozo (edición grande) 3
-    // (S-4) Informe del servicio del campo 1740
-    // (g18.3) ¡Despertad! 321
     const rowMatch = line.match(/^\(([A-Za-z0-9.\-_]+)\)\s+(.+?)\s+([\d,.]+)$/);
     if (rowMatch) {
       const code = rowMatch[1].trim();
@@ -146,6 +137,10 @@ function parseLinesFromText(lines: string[]): ParsedInventoryReport {
 export async function parseJwHubInventoryPdf(
   source: ArrayBuffer | Uint8Array
 ): Promise<ParsedInventoryReport> {
+  const pdfjsLib = await import('pdfjs-dist');
+  const pdfWorkerModule = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerModule.default;
+
   const data = source instanceof Uint8Array ? source : new Uint8Array(source);
   const loadingTask = pdfjsLib.getDocument({ data });
   const pdf = await loadingTask.promise;
@@ -168,7 +163,6 @@ export async function parseJwHubInventoryPdf(
       }
     }
 
-    // Sort top-to-bottom (descending Y in PDF coordinates), then left-to-right (ascending X)
     fragments.sort((a, b) => {
       if (Math.abs(a.y - b.y) > 4) {
         return b.y - a.y;
@@ -176,7 +170,6 @@ export async function parseJwHubInventoryPdf(
       return a.x - b.x;
     });
 
-    // Group fragments that sit on the same horizontal row (within 4pt Y tolerance)
     const rows: Array<{ y: number; items: TextFragment[] }> = [];
     for (const frag of fragments) {
       const lastRow = rows[rows.length - 1];
