@@ -1,70 +1,82 @@
-# Plan de Corrección: Persistencia Real en Firebase, Botones Activos y Ocultación del PIN
+# Plan de Implementación: Importador de PDF de Inventario Mensual (JW Hub)
 
-Este plan resuelve los tres problemas detectados tras publicar la aplicación en GitHub Pages: que los botones (borrar, crear, editar, pedir) tengan efecto inmediato y permanente en Firebase Firestore, y que el código PIN del encargado nunca se muestre en la interfaz.
+Esta función permite al encargado subir directamente el archivo PDF oficial de **Informe de inventario — Publicaciones de la congregación (JW Hub)** desde su celular o computadora para leer automáticamente todas las publicaciones y sus cantidades, previsualizar los cambios y actualizar el inventario en Firebase Firestore en un solo clic (creando además las publicaciones que aún no existan en el catálogo).
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Se identificaron las causas exactas por las que los botones parecían no hacer nada y por qué el PIN era visible:
+> Se ha actualizado el plan con el formato exacto de tu PDF en español (`INFORME DE INVENTARIO — Septiembre de 2026 | Español`), manteniendo además compatibilidad si alguna vez se sube en inglés:
 
-1. **Causa de que nada se guardara ni borrara en Firebase (`firestore.rules` + estado local)**:
-   - En `firestore.rules`, la condición `allow list: if existing().id is string;` bloqueaba las consultas generales (`collection(db, 'publications')`, `'publishers'`, `'orders'`) porque el motor de consultas de Firestore rechaza lecturas de colecciones completas si la regla exige evaluar campos internos sin un filtro `where`.
-   - Al fallar esa lectura inicial, la carga de datos semilla (`ensureFirestoreSeeded`) y la suscripción en tiempo real (`onSnapshot`) eran rechazadas por permisos, dejando la pantalla congelada con los datos de ejemplo en memoria sin aplicar los cambios de ningún botón.
-2. **Solución de Persistencia y Respuesta Inmediata**:
-   - Ajustar `firestore.rules` (y desplegarlas a Firebase) para permitir las lecturas de las colecciones de la congregación (`allow get, list: if true;`) manteniendo la validación de datos al escribir y borrar.
-   - Implementar **actualización optimista inmediata** en el estado de React (`setDb`) además de la escritura en Firebase y el respaldo en `localStorage`, de modo que cada clic en cualquier botón (borrar publicador, cambiar stock, pedir, cancelar pedido, destacar publicación) actualice la pantalla al instante y persista en la nube.
-   - Guardar una bandera de inicialización (`seeded: true` en `/settings/main`) para que, una vez que el encargado borre los publicadores o publicaciones de prueba, **nunca vuelvan a reaparecer** al recargar la página.
-3. **Ocultar el PIN del Encargado en la Interfaz**:
-   - Eliminar el texto `(por defecto: {db.adminPin})` que aparecía dentro de la ventana emergente de acceso del encargado, para que ningún publicador pueda ver el PIN en pantalla.
+- **1. Reconocimiento Exacto del Formato de JW Hub en Español**:
+  - Detecta el período y el idioma directamente del encabezado (ej. `Septiembre de 2026 | Español`).
+  - Reconoce las secciones oficiales del PDF (`Biblias`, `Libros`, `Folletos`, `Formularios y suministros`, `Revistas para el público`) para clasificar cada publicación automáticamente.
+  - Extrae cada fila con el formato `(código) Título Cantidad` (ej. `(nwt) Traducción del Nuevo Mundo 52`, `(bhs) Nos enseña 48`, `(lffi) Disfrute de la vida (folleto) 2476`, `(g18.3) ¡Despertad! 321`).
+  - Ignora automáticamente las filas de resumen `Otros` (`Otros 1`, `Otros 28`, `Otros 1482`).
+- **2. Actualización y Creación Automática con Vista Previa**:
+  - Si el código ya existe en el catálogo (ej. `nwt`, `lffi`, `lmd`), actualiza su cantidad en existencia (`stockCount`) con el número del PDF.
+  - Si la publicación aún no está en la aplicación (ej. `bhs`, `kr`, `lvs`, `sjjls`, `fg`), la marca como **[Nueva]** en la vista previa y la crea automáticamente en el catálogo al confirmar.
+- **3. Funciona 100 % en el Navegador (Compatible con GitHub Pages y Gratis)**:
+  - Usa `pdfjs-dist` directamente en el navegador sin requerir servidor backend ni claves de pago, por lo que funcionará tanto aquí como en tu página publicada en **GitHub Pages**.
 
 ---
 
 ### 1. Overview & Core Concept
 
-- **Qué Corrige**:
-  - **Efecto Real e Inmediato en Todos los Botones**: Crear, editar y borrar publicadores (individual o en masa), crear/borrar publicaciones, cambiar stock (`-` / `+`), destacar publicaciones, hacer pedidos y cancelarlos tendrá efecto inmediato en pantalla y quedará guardado permanentemente en Firebase Firestore.
-  - **No Reaparición de Datos Borrados**: Al marcar el documento `/settings/main` como inicializado, si el encargado borra los publicadores o publicaciones de ejemplo (incluso si deja la lista vacía temporalmente), el sistema respetará esa eliminación y no volverá a inyectar los datos de muestra.
-  - **Privacidad del PIN**: El modal de ingreso al panel del encargado solo mostrará el campo de contraseña enmascarado (`••••`) sin revelar jamás cuál es el PIN actual.
+- **Qué Hace**:
+  1. En el panel del **Encargado** → pestaña **Catálogo**, añade un botón **"Importar PDF"**.
+  2. Al seleccionar el archivo PDF descargado de JW Hub, lee todas las páginas y abre una **Ventana de Vista Previa**:
+     - Muestra la lista completa de publicaciones encontradas en el PDF con su código, título, sección y cantidad (`35 publicaciones` en el PDF de ejemplo).
+     - Distingue claramente cuáles **actualizarán su stock actual** (`Stock anterior → Nuevo stock`) y cuáles **se agregarán como nuevas** al catálogo.
+     - Incluye casillas de selección por si el encargado desea excluir alguna fila o sección (por ejemplo, si prefiere no publicar formularios como `(S-4) Informe del servicio del campo` en la lista de los publicadores).
+  3. Al pulsar **"Confirmar e Importar"**, actualiza el estado en pantalla al instante y guarda todos los cambios en bloque (`writeBatch`) en Firebase Firestore.
 
 ---
 
 ### 2. User Experience & Visual Design
 
-- **Flujo Corregido en Todos los Controles**:
-  - Al pulsar **Eliminar** sobre un publicador, publicación o pedido: desaparece de inmediato de la lista y se elimina del servidor de Firebase Firestore.
-  - Al pulsar **`-` / `+`** en el stock o **Destacar**: el número y el estado cambian al instante en la interfaz y se sincronizan con Firebase.
-  - Al pulsar **Encargado**: se solicita únicamente introducir el PIN secreto sin mostrar pistas ni el valor del PIN en el texto del cuadro de diálogo.
+- **Flujo Paso a Paso del Encargado**:
+  1. Entra a **Encargado** → **Catálogo** y toca el botón **"Importar PDF"**.
+  2. Selecciona el archivo `Informes_de_inventario...pdf` en su celular o computadora.
+  3. Revisa la vista previa de las publicaciones detectadas y confirma con un toque.
 
 ---
 
 ### 3. Key Product Decisions & Trade-Offs
 
-- **Decisión 1: Actualización Optimista + Sincronización con Firestore**
-  - *Enfoque Elegido*: Cada acción actualiza primero el estado visual de la aplicación (`setDb`) y simultáneamente ejecuta la operación en Firebase Firestore (`setDoc` / `deleteDoc` / `writeBatch`).
-  - *Por qué*: Garantiza que la interfaz responda en 0 milisegundos al tocar cualquier botón en el celular y que los cambios queden guardados en la nube.
+- **Decisión 1: Extracción de Filas por Coordenadas `(X, Y)` en PDF.js**
+  - *Enfoque Elegido*: Agrupar los fragmentos de texto del PDF por su posición vertical (`Y`) y unirlos de izquierda a derecha (`X`) antes de aplicar la expresión regular `^\(([A-Za-z0-9.\-]+)\)\s+(.+?)\s+(\d+)$`.
+  - *Por qué*: Garantiza que cada fila se reconstruya con precisión total entre las 3 páginas del informe.
 
-- **Decisión 2: Control de Semilla Inicial (`seeded: true` en `/settings/main`)**
-  - *Enfoque Elegido*: Verificar el documento `/settings/main` antes de cargar datos de ejemplo; una vez inicializado por primera vez, nunca vuelve a rellenar datos borrados.
-  - *Por qué*: Evita que al borrar todos los datos de ejemplo se vuelvan a crear automáticamente al refrescar la página.
+- **Decisión 2: Identificación Clara de Ediciones de Revistas**
+  - *Enfoque Elegido*: En la sección `Revistas para el público`, como varias filas tienen el mismo título `(g18.3) ¡Despertad!` o `(wp18.3) La Atalaya (ed. para el público)`, se conserva el código exacto (`g18.3`, `wp18.3`, etc.) para que cada número de revista se distinga claramente.
 
 ---
 
 ### 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                   Acción del Usuario en un Botón                     │
-│  (Pedir · Cancelar · Borrar Hermano · Cambiar Stock · Destacar · PIN)│
-└──────────────────┬───────────────────────────────────┬───────────────┘
-                   │ 1. Actualización Inmediata (0ms)  │ 2. Escritura Cloud
-                   ▼                                   ▼
-        ┌─────────────────────┐             ┌─────────────────────┐
-        │ Estado Local React  │             │ Firebase Firestore  │
-        │ + localStorage      │◄────────────┤ (Reglas Corregidas  │
-        │ (UI se actualiza ya)│  onSnapshot │  y Desplegadas)     │
-        └─────────────────────┘             └─────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│     PDF Subido: "INFORME DE INVENTARIO — Septiembre de 2026 | Español"  │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    │ Lectura Local en Navegador (pdfjs-dist)
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│             Analizador de Filas y Secciones de JW Hub                   │
+│  • Detecta sección: Biblias, Libros, Folletos, Formularios, Revistas    │
+│  • Extrae: (código) Título Cantidad  ──► Ej: (bhs) Nos enseña -> 48     │
+│  • Ignora filas "Otros" / "Others"                                      │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│               Modal de Vista Previa (Selección y Revisión)              │
+│  • [✓] (nwt) Traducción del Nuevo Mundo          Stock: 16  ──► 52      │
+│  • [✓] (bhs) Nos enseña                          [Nueva]    ──► 48      │
+│  • [✓] (lffi) Disfrute de la vida (folleto)      Stock: 52  ──► 2476    │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    │ Confirmar Lote
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│       Actualización Inmediata en UI + Lote en Firebase Firestore        │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
-
-- **Ajustes en Reglas de Firestore (`firestore.rules`)**:
-  - Permitir `get` y `list` en `/settings/{settingId}`, `/publications/{publicationId}`, `/publishers/{publisherId}` y `/orders/{orderId}` sin bloqueos de filtro para que `onSnapshot` funcione tanto en AI Studio como en GitHub Pages.
-  - Mantener las validaciones de estructura y tipos en `create`, `update` y `delete`, y desplegar las reglas actualizadas directamente a Firebase mediante `DeployRules`.

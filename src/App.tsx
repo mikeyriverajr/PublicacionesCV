@@ -21,6 +21,7 @@ import {
 } from './types';
 import {
   batchUpdateOrdersInFirestore,
+  bulkSavePublicationsToFirestore,
   bulkSavePublishersToFirestore,
   collection,
   db as firestoreDb,
@@ -37,6 +38,7 @@ import {
   savePublisherToFirestore,
   saveSettingsToFirestore,
 } from './firebase';
+import { ParsedInventoryRow } from './utils/pdfInventoryParser';
 import { PublisherPortal, PublisherTab } from './components/PublisherPortal';
 import { ServantPanel, ServantTab } from './components/ServantPanel';
 
@@ -390,6 +392,76 @@ export default function App() {
     await deletePublicationFromFirestore(id);
   };
 
+  const handleBulkImportInventory = async (
+    items: ParsedInventoryRow[],
+    reportLanguage: string
+  ) => {
+    if (items.length === 0) return;
+    const now = new Date().toISOString();
+    const toPersist: Publication[] = [];
+
+    updateLocalDb((prev) => {
+      const byCode = new Map<string, Publication>();
+      prev.publications.forEach((p) => {
+        byCode.set(p.code.trim().toLowerCase(), p);
+      });
+
+      const updatedMap = new Map<string, Publication>();
+      prev.publications.forEach((p) => {
+        updatedMap.set(p.id, p);
+      });
+
+      items.forEach((row, idx) => {
+        const key = row.code.trim().toLowerCase();
+        const existing = byCode.get(key);
+        if (existing) {
+          const updated: Publication = {
+            ...existing,
+            stockCount: Math.max(0, row.quantity),
+            isGeneralStock: true,
+            updatedAt: now,
+          };
+          updatedMap.set(updated.id, updated);
+          toPersist.push(updated);
+        } else {
+          const safeCodeId = row.code
+            .trim()
+            .replace(/[^a-zA-Z0-9_-]/g, '-')
+            .toLowerCase();
+          const created: Publication = {
+            id: `pub-${safeCodeId}-${Date.now()}-${idx}`,
+            code: row.code.trim(),
+            title: row.title.trim(),
+            category: row.category || 'Libros',
+            language: reportLanguage || 'Español',
+            isSpecialOrderEligible: true,
+            isGeneralStock: true,
+            isFeatured: false,
+            featuredNote: '',
+            stockCount: Math.max(0, row.quantity),
+            updatedAt: now,
+          };
+          updatedMap.set(created.id, created);
+          byCode.set(key, created);
+          toPersist.push(created);
+        }
+      });
+
+      const merged = Array.from(updatedMap.values()).sort((a, b) =>
+        a.title.localeCompare(b.title, 'es')
+      );
+
+      return {
+        ...prev,
+        publications: merged,
+      };
+    });
+
+    if (toPersist.length > 0) {
+      await bulkSavePublicationsToFirestore(toPersist);
+    }
+  };
+
   const handleCreatePublisher = async (pub: {
     fullName: string;
     groupName: string;
@@ -677,6 +749,7 @@ export default function App() {
             onCreatePublication={handleCreatePublication}
             onUpdatePublication={handleUpdatePublication}
             onDeletePublication={handleDeletePublication}
+            onBulkImportInventory={handleBulkImportInventory}
             onCreatePublisher={handleCreatePublisher}
             onBulkAddPublishers={handleBulkAddPublishers}
             onUpdatePublisher={handleUpdatePublisher}

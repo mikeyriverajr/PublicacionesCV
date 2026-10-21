@@ -236,6 +236,23 @@ export async function savePublicationToFirestore(pub: Publication): Promise<void
   }
 }
 
+export async function bulkSavePublicationsToFirestore(
+  pubs: Publication[]
+): Promise<void> {
+  if (pubs.length === 0) return;
+  const path = 'publications';
+  try {
+    const batch = writeBatch(db);
+    pubs.forEach((p) => {
+      const clean = sanitizePublication(p);
+      batch.set(doc(db, 'publications', clean.id), clean);
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
 export async function deletePublicationFromFirestore(id: string): Promise<void> {
   const cleanId = sanitizeId(id);
   const path = `publications/${cleanId}`;

@@ -4,6 +4,7 @@ export type PublicationCategory =
   | 'Libros'
   | 'Letra Grande'
   | 'Folletos y Tratados'
+  | 'Formularios y Suministros'
   | 'Revistas'
   | 'Otros Idiomas';
 

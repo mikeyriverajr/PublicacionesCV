@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   Edit3,
+  FileText,
   MessageCircle,
   Minus,
   PackageCheck,
@@ -27,7 +28,9 @@ import {
   formatShortDate,
   STATUS_CONFIG,
 } from '../utils/whatsapp';
+import { ParsedInventoryRow } from '../utils/pdfInventoryParser';
 import { BulkPublisherModal } from './BulkPublisherModal';
+import { InventoryPdfImportModal } from './InventoryPdfImportModal';
 
 export type ServantTab = 'orders' | 'branch_batch' | 'catalog_stock' | 'publishers';
 
@@ -51,6 +54,10 @@ interface ServantPanelProps {
   onCreatePublication: (pub: Partial<Publication>) => Promise<void>;
   onUpdatePublication: (id: string, patch: Partial<Publication>) => Promise<void>;
   onDeletePublication: (id: string) => Promise<void>;
+  onBulkImportInventory: (
+    items: ParsedInventoryRow[],
+    reportLanguage: string
+  ) => Promise<void>;
   onCreatePublisher: (pub: {
     fullName: string;
     groupName: string;
@@ -82,6 +89,7 @@ export const ServantPanel: React.FC<ServantPanelProps> = ({
   onCreatePublication,
   onUpdatePublication,
   onDeletePublication,
+  onBulkImportInventory,
   onCreatePublisher,
   onBulkAddPublishers,
   onUpdatePublisher,
@@ -104,6 +112,7 @@ export const ServantPanel: React.FC<ServantPanelProps> = ({
   // Catalog & stock state
   const [catalogSearch, setCatalogSearch] = useState('');
   const [isNewPubOpen, setIsNewPubOpen] = useState(false);
+  const [isPdfImportOpen, setIsPdfImportOpen] = useState(false);
   const [newPubCode, setNewPubCode] = useState('');
   const [newPubTitle, setNewPubTitle] = useState('');
   const [newPubLanguage, setNewPubLanguage] = useState('Español');
@@ -677,18 +686,28 @@ export const ServantPanel: React.FC<ServantPanelProps> = ({
       {/* VIEW 3: CATÁLOGO, STOCK Y DESTACADOS */}
       {activeTab === 'catalog_stock' && (
         <section className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <h2 className="text-base sm:text-lg font-bold text-slate-900">
               Catálogo y Existencias
             </h2>
-            <button
-              type="button"
-              onClick={() => setIsNewPubOpen(!isNewPubOpen)}
-              className="min-h-[40px] px-3 py-1.5 bg-[#1E3A5F] text-white text-xs font-medium rounded-xl flex items-center gap-1"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nueva publicación</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsPdfImportOpen(true)}
+                className="min-h-[40px] px-3 py-1.5 bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 text-xs font-medium rounded-xl flex items-center gap-1.5"
+              >
+                <FileText className="w-4 h-4 text-[#1E3A5F]" />
+                <span>Importar PDF</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsNewPubOpen(!isNewPubOpen)}
+                className="min-h-[40px] px-3 py-1.5 bg-[#1E3A5F] text-white text-xs font-medium rounded-xl flex items-center gap-1"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nueva publicación</span>
+              </button>
+            </div>
           </div>
 
           {isNewPubOpen && (
@@ -1084,6 +1103,14 @@ export const ServantPanel: React.FC<ServantPanelProps> = ({
           await onBulkAddPublishers(items);
           showToast(`Se agregaron ${items.length} publicadores.`);
         }}
+      />
+
+      <InventoryPdfImportModal
+        isOpen={isPdfImportOpen}
+        onClose={() => setIsPdfImportOpen(false)}
+        existingPublications={publications}
+        onConfirmImport={onBulkImportInventory}
+        showToast={showToast}
       />
     </div>
   );
