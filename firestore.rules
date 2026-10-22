@@ -113,7 +113,7 @@ service cloud.firestore {
         && data.publicationCode is string && data.publicationCode.size() >= 1 && data.publicationCode.size() <= 40
         && data.publicationTitle is string && data.publicationTitle.size() >= 1 && data.publicationTitle.size() <= 250
         && data.language is string && data.language.size() >= 1 && data.language.size() <= 80
-        && data.quantity is number && data.quantity >= 1 && data.quantity <= 500
+        && data.quantity is number && data.quantity >= 1
         && (!('notes' in data) || (data.notes is string && data.notes.size() <= 400))
         && data.status in ['requested', 'ordered_branch', 'ready_pickup', 'delivered', 'cancelled']
         && data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64

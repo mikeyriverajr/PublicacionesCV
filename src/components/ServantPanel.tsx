@@ -102,8 +102,12 @@ export const ServantPanel: React.FC<ServantPanelProps> = ({
   const [orderSearch, setOrderSearch] = useState('');
   const [isManualOrderOpen, setIsManualOrderOpen] = useState(false);
   const [manualPublisherId, setManualPublisherId] = useState(publishers[0]?.id || '');
+  const [manualPubSearch, setManualPubSearch] = useState('');
+  const [isManualPubPickerOpen, setIsManualPubPickerOpen] = useState(false);
   const [manualPublicationId, setManualPublicationId] = useState(publications[0]?.id || '');
-  const [manualQty, setManualQty] = useState(1);
+  const [manualItemSearch, setManualItemSearch] = useState('');
+  const [isManualItemPickerOpen, setIsManualItemPickerOpen] = useState(false);
+  const [manualQty, setManualQty] = useState<number>(1);
 
   // Batch confirmation
   const [confirmBatchMark, setConfirmBatchMark] = useState(false);
@@ -255,9 +259,13 @@ export const ServantPanel: React.FC<ServantPanelProps> = ({
     await onCreateOrder({
       publisherId: manualPublisherId,
       publicationId: manualPublicationId,
-      quantity: manualQty,
+      quantity: Math.max(1, Number(manualQty) || 1),
     });
     setManualQty(1);
+    setManualPubSearch('');
+    setManualItemSearch('');
+    setIsManualPubPickerOpen(false);
+    setIsManualItemPickerOpen(false);
     setIsManualOrderOpen(false);
     showToast('Pedido registrado.');
   };
@@ -332,6 +340,10 @@ export const ServantPanel: React.FC<ServantPanelProps> = ({
               onClick={() => {
                 setManualPublisherId(sortedPublishers[0]?.id || '');
                 setManualPublicationId(publications[0]?.id || '');
+                setManualPubSearch('');
+                setManualItemSearch('');
+                setIsManualPubPickerOpen(false);
+                setIsManualItemPickerOpen(false);
                 setIsManualOrderOpen(!isManualOrderOpen);
               }}
               className="min-h-[40px] px-3 py-1.5 bg-[#1E3A5F] text-white text-xs font-medium rounded-xl flex items-center gap-1"
@@ -348,7 +360,7 @@ export const ServantPanel: React.FC<ServantPanelProps> = ({
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-slate-900">
-                  Anotar pedido de un hermano
+                  Anotar pedido verbal de un hermano
                 </span>
                 <button
                   type="button"
@@ -359,39 +371,177 @@ export const ServantPanel: React.FC<ServantPanelProps> = ({
                 </button>
               </div>
 
-              <div className="space-y-2.5">
-                <select
-                  value={manualPublisherId}
-                  onChange={(e) => setManualPublisherId(e.target.value)}
-                  className="w-full min-h-[44px] px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white"
-                >
-                  {sortedPublishers.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.fullName}
-                    </option>
-                  ))}
-                </select>
+              <div className="space-y-3">
+                {/* Searchable Publisher Picker */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-medium text-slate-600">
+                    Hermano (toca para cambiar o escribir nombre):
+                  </label>
+                  {!isManualPubPickerOpen ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualPubSearch('');
+                        setIsManualPubPickerOpen(true);
+                      }}
+                      className="w-full min-h-[44px] px-3 py-2 text-sm border border-slate-300 rounded-xl bg-slate-50 hover:bg-slate-100 flex items-center justify-between gap-2 text-left"
+                    >
+                      <span className="font-semibold text-slate-900 truncate">
+                        {sortedPublishers.find((p) => p.id === manualPublisherId)
+                          ?.fullName || 'Seleccionar hermano...'}
+                      </span>
+                      <span className="text-xs font-medium text-[#1E3A5F] shrink-0">
+                        Buscar
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          autoFocus
+                          value={manualPubSearch}
+                          onChange={(e) => setManualPubSearch(e.target.value)}
+                          placeholder="Escribe el nombre del hermano..."
+                          className="w-full min-h-[42px] pl-9 pr-3 py-2 text-sm border-2 border-[#1E3A5F] rounded-xl focus:outline-none"
+                        />
+                      </div>
+                      <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white">
+                        {sortedPublishers
+                          .filter((p) =>
+                            p.fullName
+                              .toLowerCase()
+                              .includes(manualPubSearch.trim().toLowerCase())
+                          )
+                          .map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                setManualPublisherId(p.id);
+                                setIsManualPubPickerOpen(false);
+                              }}
+                              className={`w-full min-h-[40px] px-3 py-2 text-left text-sm flex items-center justify-between ${
+                                p.id === manualPublisherId
+                                  ? 'bg-[#1E3A5F] text-white font-semibold'
+                                  : 'hover:bg-slate-50 text-slate-800'
+                              }`}
+                            >
+                              <span className="truncate">{p.fullName}</span>
+                              {p.id === manualPublisherId && (
+                                <Check className="w-4 h-4 shrink-0" />
+                              )}
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
-                <select
-                  value={manualPublicationId}
-                  onChange={(e) => setManualPublicationId(e.target.value)}
-                  className="w-full min-h-[44px] px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white"
-                >
-                  {publications.map((pub) => (
-                    <option key={pub.id} value={pub.id}>
-                      [{pub.code}] {pub.title}
-                    </option>
-                  ))}
-                </select>
+                {/* Searchable Publication Picker */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-medium text-slate-600">
+                    Publicación (toca para cambiar o escribir título/código):
+                  </label>
+                  {!isManualItemPickerOpen ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualItemSearch('');
+                        setIsManualItemPickerOpen(true);
+                      }}
+                      className="w-full min-h-[44px] px-3 py-2 text-sm border border-slate-300 rounded-xl bg-slate-50 hover:bg-slate-100 flex items-center justify-between gap-2 text-left"
+                    >
+                      <span className="font-semibold text-slate-900 truncate">
+                        {(() => {
+                          const found = publications.find(
+                            (pub) => pub.id === manualPublicationId
+                          );
+                          return found
+                            ? `[${found.code}] ${found.title}`
+                            : 'Seleccionar publicación...';
+                        })()}
+                      </span>
+                      <span className="text-xs font-medium text-[#1E3A5F] shrink-0">
+                        Buscar
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          autoFocus
+                          value={manualItemSearch}
+                          onChange={(e) => setManualItemSearch(e.target.value)}
+                          placeholder="Buscar por nombre o código (ej. nwt, lffi)..."
+                          className="w-full min-h-[42px] pl-9 pr-3 py-2 text-sm border-2 border-[#1E3A5F] rounded-xl focus:outline-none"
+                        />
+                      </div>
+                      <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white">
+                        {publications
+                          .filter((pub) => {
+                            const q = manualItemSearch.trim().toLowerCase();
+                            if (!q) return true;
+                            return (
+                              pub.title.toLowerCase().includes(q) ||
+                              pub.code.toLowerCase().includes(q)
+                            );
+                          })
+                          .map((pub) => (
+                            <button
+                              key={pub.id}
+                              type="button"
+                              onClick={() => {
+                                setManualPublicationId(pub.id);
+                                setIsManualItemPickerOpen(false);
+                              }}
+                              className={`w-full min-h-[42px] px-3 py-2 text-left text-sm flex items-center justify-between gap-2 ${
+                                pub.id === manualPublicationId
+                                  ? 'bg-[#1E3A5F] text-white font-semibold'
+                                  : 'hover:bg-slate-50 text-slate-800'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1 truncate">
+                                <span className="font-mono font-bold">
+                                  [{pub.code}]
+                                </span>{' '}
+                                <span>{pub.title}</span>
+                              </div>
+                              {pub.id === manualPublicationId && (
+                                <Check className="w-4 h-4 shrink-0" />
+                              )}
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
                     min={1}
-                    max={99}
-                    value={manualQty}
-                    onChange={(e) => setManualQty(Math.max(1, Number(e.target.value)))}
-                    className="w-24 min-h-[44px] px-3 py-2 text-sm font-mono border border-slate-300 rounded-xl"
+                    inputMode="numeric"
+                    value={manualQty === 0 ? '' : manualQty}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '') {
+                        setManualQty(0);
+                      } else {
+                        const num = parseInt(val, 10);
+                        if (!Number.isNaN(num) && num >= 0) {
+                          setManualQty(num);
+                        }
+                      }
+                    }}
+                    onBlur={() => {
+                      if (!manualQty || manualQty < 1) setManualQty(1);
+                    }}
+                    placeholder="Cantidad"
+                    className="w-28 min-h-[44px] px-3 py-2 text-sm font-mono border border-slate-300 rounded-xl"
                   />
                   <button
                     type="submit"

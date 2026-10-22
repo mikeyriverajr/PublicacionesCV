@@ -146,7 +146,7 @@ export function sanitizeOrder(ord: SpecialOrder): SpecialOrder {
     publicationCode: (ord.publicationCode || 'cod').trim().slice(0, 40),
     publicationTitle: (ord.publicationTitle || 'Publicación').trim().slice(0, 250),
     language: (ord.language || 'Español').trim().slice(0, 80),
-    quantity: Math.max(1, Math.min(500, Math.floor(Number(ord.quantity) || 1))),
+    quantity: Math.max(1, Math.floor(Number(ord.quantity) || 1)),
     status,
     createdAt: (ord.createdAt || new Date().toISOString()).slice(0, 64),
     updatedAt: (ord.updatedAt || new Date().toISOString()).slice(0, 64),

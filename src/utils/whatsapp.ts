@@ -62,7 +62,7 @@ export const STATUS_CONFIG: Record<
 export function buildWhatsAppArrivalUrl(
   order: SpecialOrder,
   phone: string,
-  congregationName: string
+  _congregationName?: string
 ): string {
   const cleanPhone = (phone || '').replace(/[^\d]/g, '');
   const firstName = order.publisherName.split(' ')[0] || order.publisherName;
@@ -72,7 +72,7 @@ export function buildWhatsAppArrivalUrl(
       : `${order.quantity} ejemplares de "${order.publicationTitle}" (${order.publicationCode})`;
 
   const message =
-    `Hola ${firstName}, ¡buen día! Te escribimos del mostrador de publicaciones (${congregationName}). ` +
+    `Hola ${firstName}, ¡buen día! ` +
     `Te avisamos que ya llegó al Salón del Reino tu pedido especial: ${qtyText} en ${order.language}. ` +
     `Puedes pasar a recogerlo en la próxima reunión. ¡Muchas gracias!`;
 

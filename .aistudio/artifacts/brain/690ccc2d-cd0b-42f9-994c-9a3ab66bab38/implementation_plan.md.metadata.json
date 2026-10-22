@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan de implementación actualizado con el formato del PDF de inventario en español de JW Hub (Biblias, Libros, Folletos, Formularios y suministros, Revistas para el público) para vista previa e importación automática de cantidades y nuevas publicaciones.",
-  "updatedAt":  "2026-10-21T00:20:45.897970566Z",
+  "summary":  "Plan de implementación para eliminar el límite máximo de cantidad en pedidos, simplificar el mensaje de WhatsApp y añadir buscador rápido al anotar pedidos verbales en el panel del Encargado.",
+  "updatedAt":  "2026-10-22T00:15:33.029257782Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

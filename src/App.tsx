@@ -238,7 +238,7 @@ export default function App() {
     const usr = db.publishers.find((p) => p.id === payload.publisherId);
     if (!pub || !usr) return;
 
-    const reqQty = Math.max(1, Math.min(500, Number(payload.quantity) || 1));
+    const reqQty = Math.max(1, Math.floor(Number(payload.quantity) || 1));
     const now = new Date().toISOString();
     const hasStockInHall = pub.stockCount > 0;
 

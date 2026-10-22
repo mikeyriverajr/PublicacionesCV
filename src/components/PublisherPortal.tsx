@@ -142,14 +142,25 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
     [myOrders]
   );
 
-  const getQty = (pubId: string) => quantities[pubId] || 1;
+  const getQty = (pubId: string) => quantities[pubId] ?? 1;
 
   const updateQty = (pubId: string, delta: number) => {
     setQuantities((prev) => {
       const current = prev[pubId] || 1;
-      const next = Math.max(1, Math.min(50, current + delta));
+      const next = Math.max(1, current + delta);
       return { ...prev, [pubId]: next };
     });
+  };
+
+  const setExactQty = (pubId: string, rawValue: string) => {
+    if (rawValue === '') {
+      setQuantities((prev) => ({ ...prev, [pubId]: 0 }));
+      return;
+    }
+    const parsed = parseInt(rawValue, 10);
+    if (!Number.isNaN(parsed) && parsed >= 0) {
+      setQuantities((prev) => ({ ...prev, [pubId]: parsed }));
+    }
   };
 
   const handleRequestPublication = async (pub: Publication) => {
@@ -160,7 +171,7 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
       return;
     }
 
-    const quantity = getQty(pub.id);
+    const quantity = Math.max(1, getQty(pub.id) || 1);
     const hadStock = pub.stockCount > 0;
 
     setSubmittingPubId(pub.id);
@@ -348,18 +359,29 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
                           <button
                             type="button"
                             onClick={() => updateQty(pub.id, -1)}
-                            className="min-h-[44px] min-w-[40px] flex items-center justify-center text-slate-700"
+                            className="min-h-[44px] min-w-[38px] flex items-center justify-center text-slate-700"
                             aria-label="Restar"
                           >
                             <Minus className="w-4 h-4" />
                           </button>
-                          <span className="px-2.5 text-sm font-mono font-semibold tabular-nums">
-                            {qty}
-                          </span>
+                          <input
+                            type="number"
+                            min={1}
+                            inputMode="numeric"
+                            value={qty === 0 ? '' : qty}
+                            onChange={(e) => setExactQty(pub.id, e.target.value)}
+                            onBlur={() => {
+                              if (!quantities[pub.id] || quantities[pub.id] < 1) {
+                                setQuantities((prev) => ({ ...prev, [pub.id]: 1 }));
+                              }
+                            }}
+                            aria-label="Cantidad"
+                            className="w-14 min-h-[44px] px-1 text-center text-sm font-mono font-semibold tabular-nums bg-transparent focus:outline-none"
+                          />
                           <button
                             type="button"
                             onClick={() => updateQty(pub.id, 1)}
-                            className="min-h-[44px] min-w-[40px] flex items-center justify-center text-slate-700"
+                            className="min-h-[44px] min-w-[38px] flex items-center justify-center text-slate-700"
                             aria-label="Sumar"
                           >
                             <Plus className="w-4 h-4" />
@@ -438,18 +460,29 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
                           <button
                             type="button"
                             onClick={() => updateQty(pub.id, -1)}
-                            className="min-h-[42px] min-w-[38px] flex items-center justify-center text-slate-700"
+                            className="min-h-[42px] min-w-[36px] flex items-center justify-center text-slate-700"
                             aria-label="Restar"
                           >
                             <Minus className="w-4 h-4" />
                           </button>
-                          <span className="px-2.5 text-sm font-mono font-semibold tabular-nums">
-                            {qty}
-                          </span>
+                          <input
+                            type="number"
+                            min={1}
+                            inputMode="numeric"
+                            value={qty === 0 ? '' : qty}
+                            onChange={(e) => setExactQty(pub.id, e.target.value)}
+                            onBlur={() => {
+                              if (!quantities[pub.id] || quantities[pub.id] < 1) {
+                                setQuantities((prev) => ({ ...prev, [pub.id]: 1 }));
+                              }
+                            }}
+                            aria-label="Cantidad"
+                            className="w-14 min-h-[42px] px-1 text-center text-sm font-mono font-semibold tabular-nums bg-transparent focus:outline-none"
+                          />
                           <button
                             type="button"
                             onClick={() => updateQty(pub.id, 1)}
-                            className="min-h-[42px] min-w-[38px] flex items-center justify-center text-slate-700"
+                            className="min-h-[42px] min-w-[36px] flex items-center justify-center text-slate-700"
                             aria-label="Sumar"
                           >
                             <Plus className="w-4 h-4" />
