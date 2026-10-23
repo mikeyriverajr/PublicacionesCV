@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan de implementación para eliminar el límite máximo de cantidad en pedidos, simplificar el mensaje de WhatsApp y añadir buscador rápido al anotar pedidos verbales en el panel del Encargado.",
-  "updatedAt":  "2026-10-22T00:15:33.029257782Z",
+  "summary":  "Plan de implementación para editar publicaciones en el catálogo del encargado, rediseñar la pantalla principal de publicadores con secciones plegables y pedido limpio en 1 toque, y dejar el botón universal en Importar PDF.",
+  "updatedAt":  "2026-10-23T12:15:39.575250262Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

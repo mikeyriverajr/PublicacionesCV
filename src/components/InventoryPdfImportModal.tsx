@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   AlertCircle,
-  BookOpen,
   Check,
   FileText,
   Upload,
@@ -24,270 +23,6 @@ interface InventoryPdfImportModalProps {
   ) => Promise<void>;
   showToast: (msg: string) => void;
 }
-
-const PRELOADED_BOOKS_CATALOG: ParsedInventoryReport = {
-  mode: 'catalog',
-  reportPeriod: 'Catálogo de Libros (Regular y Letra grande)',
-  reportLanguage: 'Español',
-  items: [
-    {
-      code: 'be',
-      title: 'Benefíciese de la Escuela del Ministerio Teocrático',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'bhs',
-      title: '¿Qué nos enseña la Biblia?',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'bt',
-      title: 'Demos “un testimonio completo sobre el Reino de Dios”',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'cf',
-      title: '“Ven y sé mi seguidor”',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'cl',
-      title: 'Acerquémonos a Jehová',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'ia',
-      title: 'Ejemplos de fe',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'it-1',
-      title: 'Perspicacia para comprender las Escrituras - Volumen 1',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: true,
-    },
-    {
-      code: 'it-2',
-      title: 'Perspicacia para comprender las Escrituras - Volumen 2',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: true,
-    },
-    {
-      code: 'jd',
-      title: 'Vivamos muy pendientes del día de Jehová',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'jv',
-      title: 'Los testigos de Jehová, proclamadores del Reino de Dios',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: true,
-    },
-    {
-      code: 'jy',
-      title: 'Jesús: el camino, la verdad y la vida',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'kr',
-      title: 'El Reino de Dios ya está gobernando',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'lfb',
-      title: 'Lecciones que aprendo de la Biblia',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'lff',
-      title: '¡Disfrute de la vida para siempre! Curso interactivo de la Biblia',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'lr',
-      title: 'Aprendamos del Gran Maestro',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'lvs',
-      title: 'Continúe en el amor de Dios',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'od',
-      title: 'Organizados para hacer la voluntad de Jehová',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: true,
-    },
-    {
-      code: 'rr',
-      title: 'La adoración pura de Jehová: ¡por fin restaurada!',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'scl',
-      title: 'Textos bíblicos para la vida cristiana',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'sfg',
-      title: 'Pastoreen el rebaño de Dios',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: true,
-    },
-    {
-      code: 'sjj',
-      title: 'Cantemos con gozo a Jehová',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'wcg',
-      title: 'Seamos valientes al andar con Dios',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'yp1',
-      title: 'Lo que los jóvenes preguntan. Respuestas prácticas (volumen 1)',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'yp2',
-      title: 'Lo que los jóvenes preguntan. Respuestas prácticas (volumen 2)',
-      quantity: null,
-      sectionName: 'Libros',
-      category: 'Libros',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'btlp',
-      title: 'Demos “un testimonio completo sobre el Reino de Dios” (letra grande)',
-      quantity: null,
-      sectionName: 'Libros · Letra grande',
-      category: 'Letra Grande',
-      isSpecialRequest: true,
-    },
-    {
-      code: 'jrlp',
-      title: 'Dios nos habla mediante Jeremías (letra grande)',
-      quantity: null,
-      sectionName: 'Libros · Letra grande',
-      category: 'Letra Grande',
-      isSpecialRequest: true,
-    },
-    {
-      code: 'jylp',
-      title: 'Jesús: el camino, la verdad y la vida (letra grande)',
-      quantity: null,
-      sectionName: 'Libros · Letra grande',
-      category: 'Letra Grande',
-      isSpecialRequest: true,
-    },
-    {
-      code: 'rrlp',
-      title: 'La adoración pura de Jehová: ¡por fin restaurada! (letra grande)',
-      quantity: null,
-      sectionName: 'Libros · Letra grande',
-      category: 'Letra Grande',
-      isSpecialRequest: true,
-    },
-    {
-      code: 'sfglp',
-      title: 'Pastoreen el rebaño de Dios (letra grande)',
-      quantity: null,
-      sectionName: 'Libros · Letra grande',
-      category: 'Letra Grande',
-      isSpecialRequest: true,
-    },
-    {
-      code: 'sjjls',
-      title: 'Cantemos con gozo a Jehová (edición grande)',
-      quantity: null,
-      sectionName: 'Libros · Letra grande',
-      category: 'Letra Grande',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'sjjyls',
-      title: 'Cantemos con gozo a Jehová (sin partitura)',
-      quantity: null,
-      sectionName: 'Libros · Letra grande',
-      category: 'Letra Grande',
-      isSpecialRequest: false,
-    },
-    {
-      code: 'wcglp',
-      title: 'Seamos valientes al andar con Dios (letra grande)',
-      quantity: null,
-      sectionName: 'Libros · Letra grande',
-      category: 'Letra Grande',
-      isSpecialRequest: true,
-    },
-  ],
-};
 
 export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = ({
   isOpen,
@@ -361,7 +96,6 @@ export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = (
         setSelectedCodes(new Set());
       } else {
         setReport(parsed);
-        // Default: select all except elders' textbook (sfg / sfglp) so the servant can choose
         setSelectedCodes(
           new Set(
             parsed.items
@@ -383,23 +117,6 @@ export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = (
     } finally {
       setIsParsing(false);
     }
-  };
-
-  const handleLoadPreloadedBooks = () => {
-    setErrorMessage(null);
-    setFileName('Libros — Publicaciones de la congregación (JW Hub).pdf');
-    setReport(PRELOADED_BOOKS_CATALOG);
-    setSelectedCodes(
-      new Set(
-        PRELOADED_BOOKS_CATALOG.items
-          .filter(
-            (it) =>
-              it.code.toLowerCase() !== 'sfg' &&
-              it.code.toLowerCase() !== 'sfglp'
-          )
-          .map((it) => it.code.toLowerCase())
-      )
-    );
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -487,20 +204,20 @@ export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = (
 
         {/* Modal Body */}
         <div className="p-4 overflow-y-auto space-y-4 flex-1">
-          {/* File Upload Box using native <label> so file dialog always opens reliably */}
+          {/* Universal File Upload Box */}
           <div className="bg-slate-50 border border-dashed border-slate-300 rounded-2xl p-4 text-center space-y-3">
             <div className="space-y-1">
               <p className="text-xs sm:text-sm font-semibold text-slate-800">
                 {fileName
                   ? `Archivo seleccionado: ${fileName}`
-                  : 'Selecciona cualquier PDF de JW Hub (Inventario o Catálogo)'}
+                  : 'Selecciona cualquier PDF descargado de JW Hub'}
               </p>
               <p className="text-xs text-slate-500">
-                Si es un PDF de catálogo sin cantidades (como Libros o Folletos), agregará los títulos sin alterar tu stock actual.
+                Reconoce automáticamente el Informe Mensual de Inventario (actualiza stock) o páginas del Catálogo como Biblias, Libros o Folletos (agrega títulos sin borrar tu stock actual).
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-2">
+            <div className="flex items-center justify-center">
               <label
                 className={`min-h-[42px] px-4 py-2 bg-[#1E3A5F] hover:bg-slate-800 text-white text-xs sm:text-sm font-medium rounded-xl inline-flex items-center gap-2 cursor-pointer transition-colors ${
                   isParsing ? 'opacity-60 pointer-events-none' : ''
@@ -511,7 +228,7 @@ export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = (
                   {isParsing
                     ? 'Leyendo PDF...'
                     : report
-                    ? 'Subir otro archivo PDF'
+                    ? 'Seleccionar otro archivo PDF'
                     : 'Seleccionar archivo PDF'}
                 </span>
                 <input
@@ -522,15 +239,6 @@ export const InventoryPdfImportModal: React.FC<InventoryPdfImportModalProps> = (
                   className="sr-only"
                 />
               </label>
-
-              <button
-                type="button"
-                onClick={handleLoadPreloadedBooks}
-                className="min-h-[42px] px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs sm:text-sm font-medium rounded-xl inline-flex items-center gap-1.5 transition-colors"
-              >
-                <BookOpen className="w-4 h-4 text-[#1E3A5F]" />
-                <span>Cargar tu PDF de Libros (32 títulos)</span>
-              </button>
             </div>
           </div>
 

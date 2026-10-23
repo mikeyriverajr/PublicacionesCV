@@ -1,32 +1,31 @@
-# Plan de Implementación: Cantidades sin Límite, Mensaje de WhatsApp y Pedidos Verbales
+# Plan de Implementación: Edición de Catálogo, Pantalla Principal Limpia e Importador Universal de PDF
 
-Este plan incorpora los tres ajustes solicitados para agilizar los pedidos de publicaciones, las notificaciones por WhatsApp y el registro de pedidos verbales por parte del encargado.
+Este plan reúne las mejoras seleccionadas para hacer la pantalla de los hermanos mucho más clara en celular, permitir al encargado editar cualquier publicación del catálogo y dejar el importador de PDF completamente genérico.
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Resumen de los 3 cambios que se aplicarán:
+> Resumen de los cambios que se implementarán al aprobar el plan:
 
-- **1. Sin límite máximo de cantidad al hacer pedidos**:
-  - Se eliminan los topes de `99` y `500` unidades tanto en la vista de **Publicadores** como en el panel del **Encargado**, en la lógica de guardado (`App.tsx` y `firebase.ts`) y en las reglas de seguridad de **Firestore** (`firestore.rules`).
-  - Además de los botones `-` y `+`, el cuadro de número permitirá escribir directamente cualquier cantidad (por ejemplo `250`, `1000`, `3000`) sin restricciones.
-- **2. Mensaje de WhatsApp más directo**:
-  - Se elimina la oración `Te escribimos del mostrador de publicaciones (...).` en `src/utils/whatsapp.ts`.
-  - El nuevo texto será:
-    > *Hola Mike, ¡buen día! Te avisamos que ya llegó al Salón del Reino tu pedido especial: 50 ejemplares de "Traducción del Nuevo Mundo" (nwt) en Español. Puedes pasar a recogerlo en la próxima reunión. ¡Muchas gracias!*
-- **3. Buscador rápido en «+ Anotar pedido» para pedidos verbales**:
-  - En el formulario **«+ Anotar pedido»** del Encargado (pestaña *Pedidos*), se reemplazan las listas simples por campos con búsqueda instantánea al escribir tanto el **nombre del publicador** como la **publicación o código**, y entrada libre de cantidad sin límite.
-  - Asimismo, el encargado también puede usar en cualquier momento la pestaña principal **Pedir** seleccionando el nombre del hermano que se lo pidió en persona.
+- **1. Editar Publicaciones en el Catálogo del Encargado**:
+  - Cada publicación en **Encargado → Catálogo** tendrá un botón de **Editar** (icono de lápiz `Edit3`, igual que en la lista de hermanos).
+  - Al tocarlo, permitirá modificar el **símbolo/código** (ej. `bhs`, `nwt`), el **título o descripción**, la **categoría**, el **idioma** y la **nota de publicación destacada**, guardando el cambio directamente en Firebase Firestore.
+- **2. Página Principal de Publicadores Más Limpia y Amigable**:
+  - **Secciones plegables por categoría**: Debajo de las *Publicaciones Destacadas* y del buscador, las publicaciones estarán organizadas en secciones desplegables (**Biblias**, **Libros**, **Letra Grande**, **Folletos y Tratados**, **Revistas**). Cuando el hermano escribe en el buscador, los resultados aparecen abiertos automáticamente.
+  - **Filas limpias sin ruido visual**: Se oculta el texto repetitivo `· Español` (solo se muestra el idioma si es distinto de Español) y se ocultan los formularios internos del siervo (`Formularios y Suministros` / `S-4`) en la vista de publicadores para no confundirlos.
+  - **Elegir cantidad al tocar «Pedir»**: Se quitan los selectores `- 1 +` repetidos en cada fila. Cada publicación muestra únicamente su título, código y el botón **«Pedir»**. Al tocar **«Pedir»**, se abre una ventana compacta para confirmar (con cantidad `1` lista por defecto, o la opción de ajustar con `-` / `+` o escribir cualquier número) y enviar el pedido.
+- **3. Ventana «Importar PDF» 100 % Genérica**:
+  - Se elimina el botón temporal *"Cargar tu PDF de Libros (32 títulos)"* y queda únicamente el botón universal **«Seleccionar archivo PDF»**, que detecta y lee automáticamente cualquier PDF de **Informe de Inventario** (con cantidades) o de **Catálogo de JW Hub** (sin cantidades).
 
 ---
 
 ### 1. Archivos que se Modificarán
 
-1. **`src/utils/whatsapp.ts`**:
-   - Actualizar `buildWhatsAppArrivalUrl` para retirar la frase `Te escribimos del mostrador de publicaciones (${congregationName}).`.
+1. **`src/components/ServantPanel.tsx`**:
+   - Añadir estado de edición (`editingPubId`, `editPubCode`, `editPubTitle`, `editPubCategory`, `editPubLanguage`, `editPubFeaturedNote`) y el formulario en línea para editar y guardar cualquier publicación del catálogo.
 2. **`src/components/PublisherPortal.tsx`**:
-   - Quitar el límite `99` en las tarjetas de **Publicaciones Destacadas** y del **Catálogo Completo**, permitiendo además escribir directamente el número de ejemplares en el campo numérico entre los botones `-` y `+`.
-3. **`src/components/ServantPanel.tsx`**:
-   - Mejorar el panel **«+ Anotar pedido»** con buscador escribiendo para elegir rápidamente al hermano y la publicación cuando alguien hace un pedido verbal, y quitar el atributo `max={99}` en el campo de cantidad.
-4. **`src/App.tsx`, `src/firebase.ts` y `firestore.rules`**:
-   - Quitar el tope de `500` unidades en `quantity` para que Firestore acepte pedidos de cualquier cantidad válida (`>= 1`).
+   - Agrupar el catálogo en secciones plegables por categoría (`Biblias`, `Libros`, `Letra Grande`, `Folletos y Tratados`, `Revistas`).
+   - Filtrar los formularios internos (`Formularios y Suministros`, código `S-4`) de la vista de publicadores y ocultar el idioma cuando sea `Español`.
+   - Reemplazar los controles `- 1 +` en cada fila por un modal/cuadro compacto de confirmación de cantidad al pulsar **«Pedir»**.
+3. **`src/components/InventoryPdfImportModal.tsx`**:
+   - Retirar el botón y listado estático de los 32 libros, dejando únicamente el botón universal **«Seleccionar archivo PDF»** con soporte para ambos tipos de PDF de JW Hub.

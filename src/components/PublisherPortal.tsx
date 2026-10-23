@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   Check,
   ChevronDown,
+  ChevronRight,
   Clock,
   Minus,
   PackageCheck,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 import {
   Publication,
+  PublicationCategory,
   Publisher,
   SpecialOrder,
 } from '../types';
@@ -42,6 +44,23 @@ interface PublisherPortalProps {
   showToast: (msg: string) => void;
 }
 
+const CATEGORY_ORDER: PublicationCategory[] = [
+  'Biblias',
+  'Libros',
+  'Letra Grande',
+  'Folletos y Tratados',
+  'Revistas',
+  'Anuales y Campaña',
+  'Otros Idiomas',
+];
+
+function isInternalForm(pub: Publication): boolean {
+  if (pub.category === 'Formularios y Suministros') return true;
+  const codeUpper = pub.code.trim().toUpperCase();
+  if (codeUpper === 'S-4' || codeUpper.startsWith('S-')) return true;
+  return false;
+}
+
 export const PublisherPortal: React.FC<PublisherPortalProps> = ({
   activeTab,
   setActiveTab,
@@ -58,10 +77,14 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
   const [isNamePickerOpen, setIsNamePickerOpen] = useState(false);
   const [nameSearchQuery, setNameSearchQuery] = useState('');
 
-  // Catalog search & quantity state
+  // Catalog search & collapsible categories
   const [searchQuery, setSearchQuery] = useState('');
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [submittingPubId, setSubmittingPubId] = useState<string | null>(null);
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
+
+  // Quick Order Quantity Modal (when tapping "Pedir" on any item)
+  const [orderModalPub, setOrderModalPub] = useState<Publication | null>(null);
+  const [orderModalQty, setOrderModalQty] = useState<number>(1);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
 
   // In-stock modal state (when ordering an item that is already in stock)
   const [inStockNoticePub, setInStockNoticePub] = useState<{
@@ -97,17 +120,17 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
     [sortedPublishers, selectedPublisherId]
   );
 
-  // Featured publications
+  // Featured publications (excluding internal forms)
   const featuredPublications = useMemo(
-    () => publications.filter((p) => p.isFeatured),
+    () => publications.filter((p) => p.isFeatured && !isInternalForm(p)),
     [publications]
   );
 
-  // Special order catalog
+  // Special order catalog (excluding internal forms like S-4)
   const catalogPublications = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return publications.filter((p) => {
-      if (!p.isSpecialOrderEligible) return false;
+      if (!p.isSpecialOrderEligible || isInternalForm(p)) return false;
       if (!q) return true;
       return (
         p.title.toLowerCase().includes(q) ||
@@ -117,10 +140,34 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
     });
   }, [publications, searchQuery]);
 
-  // General counter stock
+  // Grouped by category for clean collapsible sections
+  const groupedCatalog = useMemo(() => {
+    const groups = new Map<string, Publication[]>();
+    CATEGORY_ORDER.forEach((cat) => groups.set(cat, []));
+
+    catalogPublications.forEach((pub) => {
+      const cat = pub.category || 'Libros';
+      const existing = groups.get(cat);
+      if (existing) {
+        existing.push(pub);
+      } else {
+        groups.set(cat, [pub]);
+      }
+    });
+
+    return Array.from(groups.entries())
+      .filter(([, items]) => items.length > 0)
+      .map(([category, items]) => ({
+        category,
+        items: [...items].sort((a, b) => a.title.localeCompare(b.title, 'es')),
+      }));
+  }, [catalogPublications]);
+
+  // General counter stock (excluding internal forms like S-4)
   const stockPublications = useMemo(() => {
     const q = stockSearch.trim().toLowerCase();
     return publications.filter((p) => {
+      if (isInternalForm(p)) return false;
       if (!p.isGeneralStock && p.stockCount === 0) return false;
       if (!q) return true;
       return (
@@ -142,58 +189,52 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
     [myOrders]
   );
 
-  const getQty = (pubId: string) => quantities[pubId] ?? 1;
-
-  const updateQty = (pubId: string, delta: number) => {
-    setQuantities((prev) => {
-      const current = prev[pubId] || 1;
-      const next = Math.max(1, current + delta);
-      return { ...prev, [pubId]: next };
-    });
+  const toggleCategory = (category: string) => {
+    setOpenCategories((prev) => ({
+      ...prev,
+      [category]: !prev[category],
+    }));
   };
 
-  const setExactQty = (pubId: string, rawValue: string) => {
-    if (rawValue === '') {
-      setQuantities((prev) => ({ ...prev, [pubId]: 0 }));
-      return;
-    }
-    const parsed = parseInt(rawValue, 10);
-    if (!Number.isNaN(parsed) && parsed >= 0) {
-      setQuantities((prev) => ({ ...prev, [pubId]: parsed }));
-    }
-  };
-
-  const handleRequestPublication = async (pub: Publication) => {
+  const handleOpenOrderModal = (pub: Publication) => {
     if (!selectedPublisher) {
       setIsNamePickerOpen(true);
       showToast('Por favor selecciona o escribe tu nombre primero.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+    setOrderModalPub(pub);
+    setOrderModalQty(1);
+  };
 
-    const quantity = Math.max(1, getQty(pub.id) || 1);
-    const hadStock = pub.stockCount > 0;
+  const handleConfirmOrderModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orderModalPub || !selectedPublisher) return;
 
-    setSubmittingPubId(pub.id);
+    const quantity = Math.max(1, Number(orderModalQty) || 1);
+    const hadStock = orderModalPub.stockCount > 0;
+    const targetPub = orderModalPub;
+
+    setIsSubmittingOrder(true);
     try {
       await onCreateOrder({
         publisherId: selectedPublisher.id,
-        publicationId: pub.id,
+        publicationId: targetPub.id,
         quantity,
       });
-      setQuantities((prev) => ({ ...prev, [pub.id]: 1 }));
+      setOrderModalPub(null);
 
       if (hadStock) {
         setInStockNoticePub({
-          title: pub.title,
-          code: pub.code,
+          title: targetPub.title,
+          code: targetPub.code,
           quantity,
         });
       } else {
-        showToast(`Pedido registrado: ${quantity} × ${pub.title}`);
+        showToast(`Pedido registrado: ${quantity} × ${targetPub.title}`);
       }
     } finally {
-      setSubmittingPubId(null);
+      setIsSubmittingOrder(false);
     }
   };
 
@@ -207,6 +248,8 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
       setCancellingId(null);
     }
   };
+
+  const isSearching = searchQuery.trim().length > 0;
 
   return (
     <div className="space-y-4 pb-8">
@@ -309,107 +352,68 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
         )}
       </section>
 
-      {/* TAB 1: PEDIR PUBLICACIÓN (DESTACADAS + CATÁLOGO SIMPLE) */}
+      {/* TAB 1: PEDIR PUBLICACIÓN (DESTACADAS + SECCIONES PLEGABLES LIMPIAS) */}
       {activeTab === 'catalog' && (
-        <div className="space-y-6">
-          {/* Featured Publications (1-Tap Order) */}
+        <div className="space-y-5">
+          {/* Featured Publications (Clean 1-Tap Order) */}
           {featuredPublications.length > 0 && (
             <section className="space-y-2.5">
               <div className="flex items-center gap-1.5 text-[#1E3A5F] px-1">
                 <Star className="w-4 h-4 fill-[#1E3A5F] shrink-0" />
                 <h2 className="text-sm sm:text-base font-bold text-slate-900">
-                  Publicaciones Destacadas (Pedido Rápido)
+                  Publicaciones Destacadas
                 </h2>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {featuredPublications.map((pub) => {
-                  const qty = getQty(pub.id);
-                  const isBusy = submittingPubId === pub.id;
-                  return (
-                    <div
-                      key={pub.id}
-                      className="bg-white border-2 border-[#1E3A5F]/20 rounded-2xl p-4 flex flex-col justify-between gap-3"
-                    >
-                      <div className="space-y-1">
-                        <div className="text-xs text-slate-500">
-                          <span className="font-mono font-semibold text-[#1E3A5F]">
-                            {pub.code}
-                          </span>
-                          {' · '}
-                          <span>{pub.language}</span>
-                          {pub.stockCount > 0 && (
-                            <span className="text-emerald-700 font-medium">
-                              {' · '}En existencia ({pub.stockCount})
-                            </span>
-                          )}
-                        </div>
-                        <h3 className="text-sm sm:text-base font-semibold text-slate-900 leading-snug">
-                          {pub.title}
-                        </h3>
-                        {pub.featuredNote && (
-                          <p className="text-xs text-slate-600">
-                            {pub.featuredNote}
-                          </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {featuredPublications.map((pub) => (
+                  <div
+                    key={pub.id}
+                    className="bg-white border-2 border-[#1E3A5F]/20 rounded-2xl p-4 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="text-xs text-slate-500">
+                        <span className="font-mono font-semibold text-[#1E3A5F]">
+                          {pub.code}
+                        </span>
+                        {pub.language && pub.language !== 'Español' && (
+                          <span> · {pub.language}</span>
                         )}
                       </div>
-
-                      <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-                        <div className="inline-flex items-center border border-slate-300 rounded-xl bg-slate-50 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => updateQty(pub.id, -1)}
-                            className="min-h-[44px] min-w-[38px] flex items-center justify-center text-slate-700"
-                            aria-label="Restar"
-                          >
-                            <Minus className="w-4 h-4" />
-                          </button>
-                          <input
-                            type="number"
-                            min={1}
-                            inputMode="numeric"
-                            value={qty === 0 ? '' : qty}
-                            onChange={(e) => setExactQty(pub.id, e.target.value)}
-                            onBlur={() => {
-                              if (!quantities[pub.id] || quantities[pub.id] < 1) {
-                                setQuantities((prev) => ({ ...prev, [pub.id]: 1 }));
-                              }
-                            }}
-                            aria-label="Cantidad"
-                            className="w-14 min-h-[44px] px-1 text-center text-sm font-mono font-semibold tabular-nums bg-transparent focus:outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => updateQty(pub.id, 1)}
-                            className="min-h-[44px] min-w-[38px] flex items-center justify-center text-slate-700"
-                            aria-label="Sumar"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => handleRequestPublication(pub)}
-                          className="flex-1 min-h-[44px] px-4 py-2 bg-[#1E3A5F] active:bg-[#162B47] text-white text-sm font-medium rounded-xl flex items-center justify-center gap-1.5"
-                        >
-                          <ShoppingBag className="w-4 h-4 shrink-0" />
-                          <span>{isBusy ? 'Enviando...' : 'Pedir ahora'}</span>
-                        </button>
-                      </div>
+                      <h3 className="text-sm sm:text-base font-semibold text-slate-900 leading-snug">
+                        {pub.title}
+                      </h3>
+                      {pub.featuredNote && (
+                        <p className="text-xs text-slate-600">
+                          {pub.featuredNote}
+                        </p>
+                      )}
                     </div>
-                  );
-                })}
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenOrderModal(pub)}
+                      className="min-h-[42px] px-4 py-2 bg-[#1E3A5F] hover:bg-slate-800 text-white text-xs sm:text-sm font-medium rounded-xl shrink-0 flex items-center gap-1.5"
+                    >
+                      <ShoppingBag className="w-4 h-4 shrink-0" />
+                      <span>Pedir</span>
+                    </button>
+                  </div>
+                ))}
               </div>
             </section>
           )}
 
-          {/* Simple Full List with a Single Search Bar */}
+          {/* Search + Collapsible Categories */}
           <section className="space-y-3">
-            <h2 className="text-sm sm:text-base font-bold text-slate-900 px-1">
-              Todas las publicaciones disponibles
-            </h2>
+            <div className="px-1">
+              <h2 className="text-sm sm:text-base font-bold text-slate-900">
+                Catálogo de Publicaciones
+              </h2>
+              <p className="text-xs text-slate-500">
+                Busca por nombre o código, o toca una sección para abrirla.
+              </p>
+            </div>
 
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -417,87 +421,87 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar por nombre o código (ej. nwt, lff)..."
-                className="w-full min-h-[44px] pl-10 pr-4 py-2 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]"
+                placeholder="Buscar publicación o código (ej. nwt, bhs, lff)..."
+                className="w-full min-h-[44px] pl-10 pr-9 py-2 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700"
+                  aria-label="Limpiar búsqueda"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
-            {catalogPublications.length === 0 ? (
+            {groupedCatalog.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-sm text-slate-500">
-                No se encontraron publicaciones con ese nombre.
+                No se encontraron publicaciones con «{searchQuery}».
               </div>
             ) : (
-              <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-200 overflow-hidden">
-                {catalogPublications.map((pub) => {
-                  const qty = getQty(pub.id);
-                  const isBusy = submittingPubId === pub.id;
+              <div className="space-y-2.5">
+                {groupedCatalog.map(({ category, items }) => {
+                  const isOpen = isSearching || Boolean(openCategories[category]);
 
                   return (
                     <div
-                      key={pub.id}
-                      className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      key={category}
+                      className="bg-white border border-slate-200 rounded-2xl overflow-hidden"
                     >
-                      <div className="min-w-0 flex-1 space-y-0.5">
-                        <div className="text-xs text-slate-500">
-                          <span className="font-mono font-semibold text-slate-800">
-                            {pub.code}
-                          </span>
-                          {' · '}
-                          <span>{pub.language}</span>
-                          {pub.stockCount > 0 && (
-                            <span className="text-emerald-700 font-medium">
-                              {' · '}Hay {pub.stockCount} en mostrador
-                            </span>
+                      <button
+                        type="button"
+                        onClick={() => toggleCategory(category)}
+                        className="w-full min-h-[48px] px-4 py-3 flex items-center justify-between gap-2 text-left hover:bg-slate-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          {isOpen ? (
+                            <ChevronDown className="w-4 h-4 text-[#1E3A5F] shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                           )}
+                          <span className="text-sm sm:text-base font-bold text-slate-900">
+                            {category}
+                          </span>
                         </div>
-                        <h3 className="text-sm sm:text-base font-semibold text-slate-900">
-                          {pub.title}
-                        </h3>
-                      </div>
+                        <span className="text-xs font-mono font-medium text-slate-500">
+                          {items.length}
+                        </span>
+                      </button>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className="inline-flex items-center border border-slate-300 rounded-xl bg-slate-50">
-                          <button
-                            type="button"
-                            onClick={() => updateQty(pub.id, -1)}
-                            className="min-h-[42px] min-w-[36px] flex items-center justify-center text-slate-700"
-                            aria-label="Restar"
-                          >
-                            <Minus className="w-4 h-4" />
-                          </button>
-                          <input
-                            type="number"
-                            min={1}
-                            inputMode="numeric"
-                            value={qty === 0 ? '' : qty}
-                            onChange={(e) => setExactQty(pub.id, e.target.value)}
-                            onBlur={() => {
-                              if (!quantities[pub.id] || quantities[pub.id] < 1) {
-                                setQuantities((prev) => ({ ...prev, [pub.id]: 1 }));
-                              }
-                            }}
-                            aria-label="Cantidad"
-                            className="w-14 min-h-[42px] px-1 text-center text-sm font-mono font-semibold tabular-nums bg-transparent focus:outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => updateQty(pub.id, 1)}
-                            className="min-h-[42px] min-w-[36px] flex items-center justify-center text-slate-700"
-                            aria-label="Sumar"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
+                      {isOpen && (
+                        <div className="border-t border-slate-100 divide-y divide-slate-100">
+                          {items.map((pub) => (
+                            <div
+                              key={pub.id}
+                              className="px-4 py-3 flex items-center justify-between gap-3"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center flex-wrap gap-1.5 text-xs text-slate-500">
+                                  <span className="font-mono font-semibold text-slate-700">
+                                    {pub.code}
+                                  </span>
+                                  {pub.language && pub.language !== 'Español' && (
+                                    <span>· {pub.language}</span>
+                                  )}
+                                </div>
+                                <h3 className="text-sm sm:text-base font-medium text-slate-900 leading-snug">
+                                  {pub.title}
+                                </h3>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenOrderModal(pub)}
+                                className="min-h-[38px] px-3.5 py-1.5 bg-slate-900 hover:bg-[#1E3A5F] text-white text-xs sm:text-sm font-medium rounded-xl shrink-0 transition-colors"
+                              >
+                                Pedir
+                              </button>
+                            </div>
+                          ))}
                         </div>
-
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => handleRequestPublication(pub)}
-                          className="flex-1 sm:flex-initial min-h-[42px] px-4 py-2 bg-slate-900 text-white text-xs sm:text-sm font-medium rounded-xl flex items-center justify-center gap-1.5"
-                        >
-                          <span>{isBusy ? 'Pidiendo...' : 'Pedir'}</span>
-                        </button>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
@@ -556,8 +560,9 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
                           <span className="font-mono font-semibold text-slate-700">
                             {order.publicationCode}
                           </span>
-                          {' · '}
-                          <span>{order.language}</span>
+                          {order.language && order.language !== 'Español' && (
+                            <span> · {order.language}</span>
+                          )}
                           {' · '}
                           <span className="font-mono">{formatShortDate(order.createdAt)}</span>
                         </div>
@@ -662,8 +667,9 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
                       <span className="font-mono font-semibold text-slate-700">
                         {pub.code}
                       </span>
-                      {' · '}
-                      <span>{pub.language}</span>
+                      {pub.language && pub.language !== 'Español' && (
+                        <span> · {pub.language}</span>
+                      )}
                     </div>
                     <h3 className="text-sm sm:text-base font-semibold text-slate-900">
                       {pub.title}
@@ -684,6 +690,107 @@ export const PublisherPortal: React.FC<PublisherPortalProps> = ({
             })}
           </div>
         </section>
+      )}
+
+      {/* Quick Order Quantity Modal when tapping "Pedir" */}
+      {orderModalPub && selectedPublisher && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <form
+            onSubmit={handleConfirmOrderModal}
+            className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 shadow-xl p-5 space-y-4"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="space-y-0.5 min-w-0">
+                <div className="text-xs text-slate-500">
+                  Pedido para{' '}
+                  <strong className="text-slate-800">
+                    {selectedPublisher.fullName}
+                  </strong>
+                </div>
+                <h3 className="text-base font-bold text-slate-900 leading-snug">
+                  {orderModalPub.title}
+                </h3>
+                <div className="text-xs font-mono text-[#1E3A5F]">
+                  Código: {orderModalPub.code}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOrderModalPub(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+                aria-label="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <label className="block text-xs font-medium text-slate-600 text-center">
+                ¿Cuántos ejemplares deseas pedir?
+              </label>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOrderModalQty((prev) => Math.max(1, (prev || 1) - 1))
+                  }
+                  className="w-11 h-11 rounded-xl border border-slate-300 bg-slate-50 flex items-center justify-center text-slate-700"
+                  aria-label="Restar"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  inputMode="numeric"
+                  value={orderModalQty === 0 ? '' : orderModalQty}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '') {
+                      setOrderModalQty(0);
+                    } else {
+                      const num = parseInt(val, 10);
+                      if (!Number.isNaN(num) && num >= 0) {
+                        setOrderModalQty(num);
+                      }
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!orderModalQty || orderModalQty < 1) {
+                      setOrderModalQty(1);
+                    }
+                  }}
+                  className="w-24 h-11 text-center text-lg font-mono font-bold border border-slate-300 rounded-xl"
+                />
+                <button
+                  type="button"
+                  onClick={() => setOrderModalQty((prev) => (prev || 1) + 1)}
+                  className="w-11 h-11 rounded-xl border border-slate-300 bg-slate-50 flex items-center justify-center text-slate-700"
+                  aria-label="Sumar"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setOrderModalPub(null)}
+                className="min-h-[44px] text-xs sm:text-sm font-medium text-slate-700 bg-slate-100 rounded-xl"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmittingOrder}
+                className="min-h-[44px] text-xs sm:text-sm font-semibold text-white bg-[#1E3A5F] rounded-xl"
+              >
+                {isSubmittingOrder ? 'Enviando...' : 'Confirmar pedido'}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
 
       {/* Modal Notice when ordering a publication that is ALREADY IN STOCK */}
