@@ -414,11 +414,19 @@ export default function App() {
       items.forEach((row, idx) => {
         const key = row.code.trim().toLowerCase();
         const existing = byCode.get(key);
+        const hasQuantity = typeof row.quantity === 'number';
         if (existing) {
           const updated: Publication = {
             ...existing,
-            stockCount: Math.max(0, row.quantity),
-            isGeneralStock: true,
+            title:
+              !hasQuantity && row.title.trim().length > existing.title.length
+                ? row.title.trim()
+                : existing.title,
+            category: row.category || existing.category,
+            stockCount: hasQuantity
+              ? Math.max(0, row.quantity as number)
+              : existing.stockCount,
+            isGeneralStock: hasQuantity ? true : existing.isGeneralStock,
             updatedAt: now,
           };
           updatedMap.set(updated.id, updated);
@@ -435,10 +443,10 @@ export default function App() {
             category: row.category || 'Libros',
             language: reportLanguage || 'Español',
             isSpecialOrderEligible: true,
-            isGeneralStock: true,
+            isGeneralStock: hasQuantity ? true : !row.isSpecialRequest,
             isFeatured: false,
             featuredNote: '',
-            stockCount: Math.max(0, row.quantity),
+            stockCount: hasQuantity ? Math.max(0, row.quantity as number) : 0,
             updatedAt: now,
           };
           updatedMap.set(created.id, created);
